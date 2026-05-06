@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>e-Dog Vision Console</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>e-Dog Vision Console</h1>
+        <p>纯视觉调试台</p>
+      </div>
+      <div class="status-strip">
+        <span class="status ok">Dry-run</span>
+        <span class="status">14 Hz</span>
+        <span class="status warn">Stop Ready</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="preview">
+        <div class="preview-toolbar">
+          <button id="startBtn">启动预览</button>
+          <button id="stopBtn">急停</button>
+          <select id="mode">
+            <option value="stop">stop</option>
+            <option value="track">track</option>
+            <option value="purple">purple</option>
+            <option value="brown">brown</option>
+          </select>
+        </div>
+        <div class="video-surface">
+          <div class="road-line"></div>
+          <div class="target-line"></div>
+          <span>debug frame</span>
+        </div>
+        <div class="telemetry">
+          <div><strong id="err">+0.00</strong><span>line error</span></div>
+          <div><strong id="conf">0.00</strong><span>confidence</span></div>
+          <div><strong id="frame">0</strong><span>frames</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>颜色阈值</h2>
+        <div class="threshold-list" id="thresholds"></div>
+      </section>
+
+      <section class="panel">
+        <h2>控制链路</h2>
+        <dl class="kv">
+          <dt>Serial</dt><dd>/dev/serial0, 9600, 8N1</dd>
+          <dt>Motion</dt><dd>8F 25 16 02 ... Sum FF</dd>
+          <dt>Stop</dt><dd>8F 00 01 0D 0E FF</dd>
+          <dt>Action</dt><dd>8F 51 01 ID Sum FF</dd>
+        </dl>
+      </section>
+
+      <section class="panel command-panel">
+        <h2>运行命令</h2>
+        <pre>python -m backend.app --dry-run --mode stop
+python -m backend.app --backend serial --serial-port /dev/serial0 --mode track</pre>
+      </section>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>
+

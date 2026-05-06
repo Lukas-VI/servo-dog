@@ -1,0 +1,32 @@
+camera_index: 0
+frame_width: 320
+frame_height: 240
+loop_hz: 14.0
+serial_port: /dev/serial0
+serial_baud: 9600
+stand_height: 144
+pid:
+  kp_side: 0.12
+  kd_side: 0.04
+  kp_yaw: 0.80
+  kd_yaw: 0.18
+  forward_speed: 0.18
+  max_side: 0.22
+  max_yaw: 0.90
+colors_hsv:
+  blue:
+    min: [95, 70, 40]
+    max: [130, 255, 255]
+  green:
+    min: [40, 60, 40]
+    max: [85, 255, 255]
+  purple:
+    min: [125, 40, 40]
+    max: [165, 255, 255]
+  brown:
+    min: [5, 45, 30]
+    max: [25, 230, 220]
+  black:
+    min: [0, 0, 0]
+    max: [180, 255, 80]
+

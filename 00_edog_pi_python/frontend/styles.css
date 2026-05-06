@@ -1,0 +1,275 @@
+:root {
+  --bg: #f4f6f5;
+  --ink: #18211f;
+  --muted: #62706b;
+  --panel: #ffffff;
+  --line: #d7dedb;
+  --accent: #0c7c66;
+  --danger: #b42318;
+  --warn: #9f5f00;
+  --shadow: 0 14px 36px rgba(17, 34, 29, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Arial, "Microsoft YaHei", sans-serif;
+}
+
+.topbar {
+  min-height: 86px;
+  padding: 18px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfb;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 25px;
+  line-height: 1.15;
+}
+
+.topbar p,
+.panel h2 {
+  color: var(--muted);
+}
+
+.status-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.status {
+  min-height: 30px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status.ok {
+  color: var(--accent);
+}
+
+.status.warn {
+  color: var(--warn);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.4fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.preview,
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.preview {
+  min-height: 620px;
+}
+
+.preview-toolbar {
+  min-height: 58px;
+  padding: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+button,
+select {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  padding: 0 12px;
+}
+
+button:first-child {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+#stopBtn {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.video-surface {
+  position: relative;
+  height: 460px;
+  margin: 16px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,0.04) 1px, transparent 1px),
+    #17201d;
+  background-size: 32px 32px;
+  border: 1px solid #111a17;
+}
+
+.video-surface span {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  color: rgba(255,255,255,0.72);
+  font-size: 13px;
+}
+
+.road-line,
+.target-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+}
+
+.road-line {
+  left: 50%;
+  background: rgba(255,255,255,0.7);
+}
+
+.target-line {
+  left: 57%;
+  background: #ff9f1c;
+  box-shadow: 0 0 0 2px rgba(255,159,28,0.2);
+}
+
+.telemetry {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin: 0 16px 16px;
+  background: var(--line);
+}
+
+.telemetry div {
+  background: #fff;
+  padding: 14px;
+}
+
+.telemetry strong {
+  display: block;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.telemetry span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.panel {
+  padding: 16px;
+}
+
+.threshold-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.threshold-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.swatch {
+  height: 28px;
+  border: 1px solid var(--line);
+}
+
+.bar {
+  height: 10px;
+  background: #e7ecea;
+}
+
+.bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 10px 14px;
+  margin: 14px 0 0;
+  font-size: 14px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  font-family: Consolas, monospace;
+}
+
+.command-panel {
+  grid-column: 2;
+}
+
+pre {
+  overflow-x: auto;
+  margin: 14px 0 0;
+  padding: 14px;
+  background: #18211f;
+  color: #e7f3ef;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 820px) {
+  .topbar,
+  .layout {
+    display: block;
+  }
+
+  .status-strip,
+  .panel,
+  .preview {
+    margin-top: 14px;
+  }
+
+  .layout {
+    padding: 14px;
+  }
+
+  .video-surface {
+    height: 320px;
+  }
+
+  .command-panel {
+    grid-column: auto;
+  }
+}
+
