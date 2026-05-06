@@ -48,6 +48,24 @@ Latest tested deployment:
 - dry-run helper: `/home/pi/edog_pi_python/current/run_dry.sh`
 - serial helper: `/home/pi/edog_pi_python/current/run_serial.sh`
 
+## Browser Debug Console
+
+Run the browser tuning server on the Pi:
+
+```bash
+cd /home/pi/edog_pi_python/current
+export PYTHONPATH="/usr/local/lib/python3.7/site-packages/cv2/python-3.7:/home/pi/opencv/release/lib/python3:${PYTHONPATH:-}"
+python3 -m backend.debug_server --host 0.0.0.0 --port 8080 --camera-source 0
+```
+
+Then open `http://192.168.12.1:8080` from the wired PC. The page can pull
+`/api/frame.jpg` repeatedly, preview HSV masks in the browser, edit PID steering
+parameters, and save `config.yaml`.
+
+The old Qt `socketServer` listened for UDP JPEG frames on `30015` to `30018`
+and sent threshold bytes to robot port `8000`. The new path replaces that with
+one HTTP service to reduce firewall, address, and multi-port debugging pain.
+
 ## Stable Wired And Wireless
 
 - Wired debug: `eth0 = 192.168.12.1/24`.

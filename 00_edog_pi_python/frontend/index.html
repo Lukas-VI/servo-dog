@@ -3,69 +3,103 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>e-Dog Vision Console</title>
+    <title>e-Dog Vision Studio</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
-        <h1>e-Dog Vision Console</h1>
-        <p>纯视觉调试台</p>
+        <h1>e-Dog Vision Studio</h1>
+        <p>颜色阈值、转向参数、任务图调试</p>
       </div>
-      <div class="status-strip">
-        <span class="status ok">Dry-run</span>
-        <span class="status">14 Hz</span>
-        <span class="status warn">Stop Ready</span>
+      <div class="top-actions">
+        <button id="loadConfigBtn" class="icon-btn" title="从后端读取配置">↻</button>
+        <button id="saveConfigBtn" class="primary">保存配置</button>
+        <button id="exportBtn">导出 YAML</button>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="preview">
-        <div class="preview-toolbar">
-          <button id="startBtn">启动预览</button>
-          <button id="stopBtn">急停</button>
-          <select id="mode">
-            <option value="stop">stop</option>
-            <option value="track">track</option>
-            <option value="purple">purple</option>
-            <option value="brown">brown</option>
-          </select>
+    <main class="workspace">
+      <section class="preview-pane">
+        <div class="pane-head">
+          <div>
+            <h2>视觉预览</h2>
+            <span id="sourceLabel">未选择图像</span>
+          </div>
+          <button id="liveBtn" class="primary">实时摄像头</button>
+          <button id="pauseLiveBtn">暂停</button>
+          <label class="file-btn">
+            打开图片
+            <input id="imageInput" type="file" accept="image/*" />
+          </label>
         </div>
-        <div class="video-surface">
-          <div class="road-line"></div>
-          <div class="target-line"></div>
-          <span>debug frame</span>
+        <div class="canvas-grid">
+          <figure>
+            <canvas id="sourceCanvas" width="640" height="420"></canvas>
+            <figcaption>原始帧</figcaption>
+          </figure>
+          <figure>
+            <canvas id="maskCanvas" width="640" height="420"></canvas>
+            <figcaption>阈值掩膜</figcaption>
+          </figure>
         </div>
-        <div class="telemetry">
-          <div><strong id="err">+0.00</strong><span>line error</span></div>
-          <div><strong id="conf">0.00</strong><span>confidence</span></div>
-          <div><strong id="frame">0</strong><span>frames</span></div>
+        <div class="preview-footer">
+          <label>
+            当前颜色
+            <select id="activeColor"></select>
+          </label>
+          <label>
+            叠加透明度
+            <input id="overlayAlpha" type="range" min="0" max="100" value="62" />
+          </label>
+          <div class="metric">
+            <strong id="maskRatio">0.0%</strong>
+            <span>命中像素</span>
+          </div>
         </div>
       </section>
 
-      <section class="panel">
-        <h2>颜色阈值</h2>
-        <div class="threshold-list" id="thresholds"></div>
-      </section>
+      <aside class="inspector">
+        <nav class="tabs" aria-label="debug sections">
+          <button class="tab active" data-tab="colors">阈值</button>
+          <button class="tab" data-tab="steering">转向</button>
+          <button class="tab" data-tab="tasks">任务图</button>
+        </nav>
 
-      <section class="panel">
-        <h2>控制链路</h2>
-        <dl class="kv">
-          <dt>Serial</dt><dd>/dev/serial0, 9600, 8N1</dd>
-          <dt>Motion</dt><dd>8F 25 16 02 ... Sum FF</dd>
-          <dt>Stop</dt><dd>8F 00 01 0D 0E FF</dd>
-          <dt>Action</dt><dd>8F 51 01 ID Sum FF</dd>
-        </dl>
-      </section>
+        <section id="colorsTab" class="tab-panel active">
+          <div id="colorEditor" class="color-editor"></div>
+        </section>
 
-      <section class="panel command-panel">
-        <h2>运行命令</h2>
-        <pre>python -m backend.app --dry-run --mode stop
-python -m backend.app --backend serial --serial-port /dev/serial0 --mode track</pre>
-      </section>
+        <section id="steeringTab" class="tab-panel">
+          <div class="control-grid" id="pidEditor"></div>
+          <div class="steering-sim">
+            <canvas id="steeringCanvas" width="520" height="180"></canvas>
+            <div class="sim-readout">
+              <span>side <strong id="sideOut">0.000</strong></span>
+              <span>yaw <strong id="yawOut">0.000</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <section id="tasksTab" class="tab-panel">
+          <div class="task-tools">
+            <button id="addTaskBtn" class="primary">新增节点</button>
+            <button id="addEdgeBtn">新增连线</button>
+          </div>
+          <svg id="taskGraph" viewBox="0 0 680 360" role="img" aria-label="task graph"></svg>
+          <div id="taskEditor" class="task-editor"></div>
+        </section>
+      </aside>
     </main>
+
+    <section class="config-drawer">
+      <div class="drawer-head">
+        <h2>配置预览</h2>
+        <span id="saveState">本地未保存</span>
+      </div>
+      <textarea id="yamlOutput" spellcheck="false"></textarea>
+    </section>
 
     <script src="main.js"></script>
   </body>
 </html>
-
