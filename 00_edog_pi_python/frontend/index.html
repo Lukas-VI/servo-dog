@@ -64,6 +64,7 @@
           <button class="tab active" data-tab="colors">阈值</button>
           <button class="tab" data-tab="steering">转向</button>
           <button class="tab" data-tab="tasks">任务图</button>
+          <button class="tab" data-tab="slam">SLAM</button>
         </nav>
 
         <section id="colorsTab" class="tab-panel active">
@@ -88,6 +89,21 @@
           </div>
           <svg id="taskGraph" viewBox="0 0 680 360" role="img" aria-label="task graph"></svg>
           <div id="taskEditor" class="task-editor"></div>
+        </section>
+
+        <section id="slamTab" class="tab-panel">
+          <div class="slam-toolbar">
+            <button id="slamRunBtn" class="primary">运行 demo</button>
+            <button id="slamStepBtn">单步</button>
+            <button id="slamResetBtn">重置</button>
+          </div>
+          <canvas id="slamCanvas" width="680" height="420"></canvas>
+          <div class="slam-stats">
+            <div><strong id="slamFrame">0</strong><span>frame</span></div>
+            <div><strong id="slamFeatures">0</strong><span>features</span></div>
+            <div><strong id="slamLoop">idle</strong><span>loop</span></div>
+          </div>
+          <div class="control-grid" id="slamEditor"></div>
         </section>
       </aside>
     </main>

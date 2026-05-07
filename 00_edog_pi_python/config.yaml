@@ -29,4 +29,10 @@ colors_hsv:
   black:
     min: [0, 0, 0]
     max: [180, 255, 80]
-
+slam_demo:
+  enabled: true
+  mode: feature_odometry
+  feature_count: 90
+  map_decay: 0.94
+  motion_scale: 1.0
+  loop_threshold: 0.42

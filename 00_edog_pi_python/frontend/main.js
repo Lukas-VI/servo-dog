@@ -35,6 +35,14 @@ const defaultConfig = {
       { from: "brown_gate", to: "finish", condition: "after_action" },
     ],
   },
+  slam_demo: {
+    enabled: true,
+    mode: "feature_odometry",
+    feature_count: 90,
+    map_decay: 0.94,
+    motion_scale: 1.0,
+    loop_threshold: 0.42,
+  },
 };
 
 const colorOrder = ["blue", "green", "purple", "brown", "black"];
@@ -48,6 +56,12 @@ const pidMeta = {
   max_side: ["横移限幅", 0, 0.6, 0.01],
   max_yaw: ["转向限幅", 0, 2, 0.01],
 };
+const slamMeta = {
+  feature_count: ["特征点数量", 20, 180, 1],
+  map_decay: ["地图衰减", 0.82, 0.99, 0.01],
+  motion_scale: ["运动尺度", 0.2, 2.4, 0.05],
+  loop_threshold: ["闭环阈值", 0.1, 0.9, 0.01],
+};
 
 let config = structuredCloneSafe(defaultConfig);
 let activeColor = "blue";
@@ -57,6 +71,9 @@ let selectedEdgeIndex = 0;
 let liveRunning = false;
 let liveTimer = 0;
 let liveFrames = 0;
+let slamRunning = false;
+let slamTimer = 0;
+let slamState = makeSlamState();
 
 const $ = (id) => document.getElementById(id);
 const sourceCanvas = $("sourceCanvas");
@@ -105,6 +122,8 @@ function renderAll() {
   renderYaml();
   renderMask();
   renderSteering();
+  renderSlamEditor();
+  renderSlam();
 }
 
 function renderColorSelector() {
@@ -147,6 +166,20 @@ function renderPidEditor() {
         <span>${label}</span>
         <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-pid="${key}" />
         <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-pid="${key}" />
+      </label>`;
+  }).join("");
+}
+
+function renderSlamEditor() {
+  const root = $("slamEditor");
+  if (!root) return;
+  root.innerHTML = Object.entries(slamMeta).map(([key, [label, min, max, step]]) => {
+    const value = config.slam_demo?.[key] ?? defaultConfig.slam_demo[key];
+    return `
+      <label class="param-row">
+        <span>${label}</span>
+        <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-slam="${key}" />
+        <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-slam="${key}" />
       </label>`;
   }).join("");
 }
@@ -299,6 +332,140 @@ function renderTaskEditor() {
     </div>`;
 }
 
+function makeSlamState() {
+  return {
+    frame: 0,
+    pose: { x: 0, y: 0, theta: -0.15 },
+    path: [{ x: 0, y: 0 }],
+    landmarks: [],
+    loop: "idle",
+  };
+}
+
+function resetSlam() {
+  slamState = makeSlamState();
+  renderSlam();
+}
+
+function stepSlam() {
+  const cfg = config.slam_demo || defaultConfig.slam_demo;
+  const frame = slamState.frame + 1;
+  const drift = Math.sin(frame / 19) * 0.035;
+  const turn = Math.sin(frame / 37) * 0.055 + drift;
+  const speed = 3.2 * Number(cfg.motion_scale || 1);
+  slamState.pose.theta += turn;
+  slamState.pose.x += Math.cos(slamState.pose.theta) * speed;
+  slamState.pose.y += Math.sin(slamState.pose.theta) * speed;
+  slamState.frame = frame;
+  slamState.path.push({ x: slamState.pose.x, y: slamState.pose.y });
+  if (slamState.path.length > 180) slamState.path.shift();
+
+  const desired = Number(cfg.feature_count || 90);
+  while (slamState.landmarks.length < desired) {
+    const angle = slamState.pose.theta + (Math.random() - 0.5) * 2.3;
+    const radius = 42 + Math.random() * 150;
+    slamState.landmarks.push({
+      x: slamState.pose.x + Math.cos(angle) * radius,
+      y: slamState.pose.y + Math.sin(angle) * radius,
+      weight: 0.45 + Math.random() * 0.55,
+    });
+  }
+  slamState.landmarks.forEach((point) => {
+    point.weight *= Number(cfg.map_decay || 0.94);
+    if (Math.random() < 0.08) point.weight = Math.min(1, point.weight + 0.22);
+  });
+  slamState.landmarks = slamState.landmarks
+    .filter((point) => point.weight > 0.08)
+    .slice(-desired);
+
+  const first = slamState.path[0];
+  const distanceToStart = Math.hypot(slamState.pose.x - first.x, slamState.pose.y - first.y);
+  slamState.loop = frame > 80 && distanceToStart < 90 * Number(cfg.loop_threshold || 0.42) ? "loop candidate" : "tracking";
+  renderSlam();
+}
+
+function renderSlam() {
+  const canvas = $("slamCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#0f1718";
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(255,255,255,.07)";
+  ctx.lineWidth = 1;
+  for (let x = 20; x < w; x += 32) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = 20; y < h; y += 32) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+
+  const center = { x: w / 2, y: h / 2 };
+  const pose = slamState.pose;
+  const toScreen = (point) => ({
+    x: center.x + (point.x - pose.x) * 1.05,
+    y: center.y + (point.y - pose.y) * 1.05,
+  });
+
+  slamState.landmarks.forEach((point) => {
+    const p = toScreen(point);
+    if (p.x < -10 || p.x > w + 10 || p.y < -10 || p.y > h + 10) return;
+    ctx.fillStyle = `rgba(46, 182, 125, ${Math.max(0.18, point.weight)})`;
+    ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+  });
+
+  ctx.strokeStyle = "#f2b13c";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  slamState.path.forEach((point, index) => {
+    const p = toScreen(point);
+    if (index === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.rotate(pose.theta);
+  ctx.fillStyle = "#f4f8f6";
+  ctx.beginPath();
+  ctx.moveTo(18, 0);
+  ctx.lineTo(-12, -10);
+  ctx.lineTo(-7, 0);
+  ctx.lineTo(-12, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255,255,255,.72)";
+  ctx.font = "13px Arial";
+  ctx.fillText("browser-side SLAM demo: feature odometry / local map", 16, 24);
+
+  $("slamFrame").textContent = String(slamState.frame);
+  $("slamFeatures").textContent = String(slamState.landmarks.length);
+  $("slamLoop").textContent = slamState.loop;
+}
+
+function runSlam() {
+  if (!slamRunning) return;
+  stepSlam();
+  slamTimer = window.setTimeout(runSlam, 120);
+}
+
+function startSlam() {
+  if (slamRunning) {
+    slamRunning = false;
+    window.clearTimeout(slamTimer);
+    $("slamRunBtn").textContent = "运行 demo";
+    return;
+  }
+  slamRunning = true;
+  $("slamRunBtn").textContent = "暂停 demo";
+  runSlam();
+}
+
 function toYaml(data) {
   const lines = [];
   ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height"].forEach((key) => lines.push(`${key}: ${data[key]}`));
@@ -325,6 +492,8 @@ function toYaml(data) {
     lines.push(`      to: ${edge.to}`);
     lines.push(`      condition: ${edge.condition || ""}`);
   });
+  lines.push("slam_demo:");
+  Object.entries(data.slam_demo || defaultConfig.slam_demo).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   return lines.join("\n") + "\n";
 }
 
@@ -339,6 +508,7 @@ async function loadConfig() {
     config = { ...structuredCloneSafe(defaultConfig), ...(await response.json()) };
     config.pid = { ...defaultConfig.pid, ...(config.pid || {}) };
     config.colors_hsv = { ...defaultConfig.colors_hsv, ...(config.colors_hsv || {}) };
+    config.slam_demo = { ...defaultConfig.slam_demo, ...(config.slam_demo || {}) };
     config.task_graph = config.task_graph || structuredCloneSafe(defaultConfig.task_graph);
     if (!config.task_graph.nodes || config.task_graph.nodes.length === 0) {
       config.task_graph = structuredCloneSafe(defaultConfig.task_graph);
@@ -424,6 +594,9 @@ function bindEvents() {
     navigator.clipboard?.writeText(toYaml(config));
     $("saveState").textContent = "YAML 已复制";
   });
+  $("slamRunBtn").addEventListener("click", startSlam);
+  $("slamStepBtn").addEventListener("click", stepSlam);
+  $("slamResetBtn").addEventListener("click", resetSlam);
   document.body.addEventListener("input", handleInput);
   document.body.addEventListener("click", handleClick);
 }
@@ -441,6 +614,12 @@ function handleInput(event) {
     config.pid[target.dataset.pid] = Number(target.value);
     renderPidEditor();
     renderSteering();
+    renderYaml();
+  }
+  if (target.dataset.slam) {
+    config.slam_demo[target.dataset.slam] = Number(target.value);
+    renderSlamEditor();
+    renderSlam();
     renderYaml();
   }
   if (target.dataset.nodeField) {
