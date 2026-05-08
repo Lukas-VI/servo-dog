@@ -27,6 +27,7 @@
             <span id="sourceLabel">未选择图像</span>
           </div>
           <button id="liveBtn" class="primary">实时摄像头</button>
+          <button id="visionBtn">轨道提取</button>
           <button id="pauseLiveBtn">暂停</button>
           <label class="file-btn">
             打开图片
@@ -55,6 +56,10 @@
           <div class="metric">
             <strong id="maskRatio">0.0%</strong>
             <span>命中像素</span>
+          </div>
+          <div class="metric wide">
+            <strong id="visionMetric">-</strong>
+            <span>轨道/岔路</span>
           </div>
         </div>
       </section>
@@ -91,13 +96,14 @@
               <div><span>来源</span><strong id="runtimeSource">-</strong></div>
               <div><span>写入次数</span><strong id="runtimeWrites">0</strong></div>
               <div><span>最后帧</span><strong id="runtimeFrame">-</strong></div>
+              <div><span>地图位置</span><strong id="runtimePose">-</strong></div>
             </div>
             <pre id="runtimeRaw">等待运行时反馈</pre>
           </div>
           <div class="mapping-block">
             <h3>Xbox 360 pygame 常见索引</h3>
             <p class="hint">按钮：0=A，1=B，2=X，3=Y，4=LB，5=RB，6=Back，7=Start，8=Guide，9=L3，10=R3。</p>
-            <p class="hint">轴：0=左摇杆左右，1=左摇杆上下，3=右摇杆左右，4=右摇杆上下，2=LT，5=RT。以实时反馈里的 raw_axes 为准。</p>
+            <p class="hint">当前默认美国手：0=左摇杆偏航，1=左摇杆高度油门，3=右摇杆左右横移，4=右摇杆前后。左右已反向修正，以实时反馈 raw_axes 为准。</p>
           </div>
           <div class="control-grid" id="gamepadEditor"></div>
         </section>
@@ -106,6 +112,12 @@
           <div class="task-tools">
             <button id="addTaskBtn" class="primary">新增节点</button>
             <button id="addEdgeBtn">新增连线</button>
+          </div>
+          <div class="map-tools">
+            <input id="mapNameInput" value="race_track_v1" />
+            <button id="saveMapBtn">保存地图</button>
+            <button id="loadMapBtn">读取地图</button>
+            <button id="exportMapBtn">导出地图 JSON</button>
           </div>
           <div class="runtime-tools">
             <button id="runtimeInitBtn">初始化</button>

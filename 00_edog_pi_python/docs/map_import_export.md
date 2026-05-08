@@ -2,21 +2,21 @@
 
 ## 当前状态
 
-当前项目已经有 `task_graph`，可以描述任务节点和连线，但还没有独立的赛道地图文件管理系统。
+当前项目已经有 `task_graph`，可以描述任务节点和连线；Web 调试台的“任务图”页也已经支持把当前任务图保存/读取为 `maps/*.json`。
 
 现在实际可用的录入方式：
 
 1. 打开 Web 调试台。
 2. 进入“任务图”。
 3. 手动新增节点、连线、条件和动作。
-4. 点击保存配置。
-5. 配置写入当前版本的 `config.yaml`。
+4. 点击“保存地图”写入当前 release 的 `maps/<name>.json`。
+5. 点击“保存配置”会把当前任务图写入 `config.yaml`。
 
 这适合固定小赛道，但不适合长期维护多张地图。
 
 ## 建议的持久化目标
 
-后续应新增：
+当前保存目录：
 
 ```text
 /home/pi/edog_pi_python/current/maps/
@@ -31,26 +31,28 @@ maps/test_track_left_branch.json
 
 地图文件描述拓扑，而不是保存完整图像点云。
 
-## 地图 JSON 建议格式
+## 地图 JSON 格式
 
 ```json
 {
   "name": "race_track_v1",
   "version": 1,
   "created_at": "2026-05-08",
+  "mode": "line_topology",
+  "branch_default": "straight",
   "nodes": [
-    {"id": "start", "type": "start"},
-    {"id": "fork_1", "type": "fork", "exits": ["left", "straight"]},
-    {"id": "color_blue", "type": "color", "color": "blue", "action": "updais"},
-    {"id": "finish", "type": "finish"}
+    {"id": "start", "label": "Start", "type": "track", "color": "black", "action": "", "x": 0, "y": 0},
+    {"id": "fork_1", "label": "Fork 1", "type": "fork", "color": "black", "action": "", "x": 120, "y": 0},
+    {"id": "finish", "label": "Stop", "type": "stop", "color": "black", "action": "stop", "x": 240, "y": 80}
   ],
   "edges": [
     {"from": "start", "to": "fork_1", "condition": "line_confidence>0.35"},
-    {"from": "fork_1", "to": "color_blue", "choice": "left"},
-    {"from": "color_blue", "to": "finish", "condition": "after_action"}
+    {"from": "fork_1", "to": "finish", "condition": "choice:right"}
   ]
 }
 ```
+
+`x/y` 是可选字段。没有填写时，运行时会按任务图顺序生成粗略坐标；填写后，`runtime_status.map_pose` 会用这些坐标显示当前位置。
 
 ## 录入方式
 
@@ -77,11 +79,19 @@ maps/test_track_left_branch.json
 
 ## 导入方式
 
-后续 Web 应支持：
+Web 当前支持：
 
-- 上传 JSON。
-- 从 `maps/` 列表选择。
-- 将地图导入为 `config.yaml` 的 `task_graph`。
-- 将当前 `task_graph` 导出为地图 JSON。
+- “保存地图”：把当前任务图保存为 JSON。
+- “读取地图”：读取同名 JSON 并导入到当前任务图。
+- “导出地图 JSON”：复制当前地图 JSON，便于手工备份。
 
-当前还没有完整实现地图导入/导出按钮，所以短期仍使用任务图编辑和 `config.yaml`。
+## 粗定位说明
+
+没有二维码、AprilTag、轮速计或 IMU 融合时，系统不能获得真正全局绝对位姿。当前实现提供的是“任务图绝对坐标里的粗定位”：
+
+- `runtime_status.map_pose.from/to`：当前认为所在的任务图边。
+- `runtime_status.map_pose.progress`：沿当前边的进度 `0..1`。
+- `runtime_status.map_pose.x/y/theta`：基于任务图坐标和命令速度积分的粗略位置。
+- `runtime_status.map_pose.lateral_error`：视觉巡线横向误差，可用于判断是否偏离赛道。
+
+要让定位更稳定，建议在地图中录入岔路节点、颜色节点或动作节点；运行时检测到这些事件后，可以把当前位置重定位到对应节点。

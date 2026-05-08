@@ -14,29 +14,47 @@ pid:
   forward_speed: 0.18
   max_side: 0.22
   max_yaw: 0.90
+  min_track_confidence: 0.18
+  lost_rescue_s: 0.45
+  lost_rescue_decay: 0.72
 branch:
   default_turn: straight
   fork_confidence: 0.18
   turn_bias: 0.28
+  branch_error_blend: 0.85
+  fork_speed_factor: 0.88
+  branch_latch_s: 0.75
+vision:
+  roi_start_ratio: 0.48
+  gate_top_width_ratio: 0.66
+  gate_bottom_width_ratio: 0.96
+  exclude_background: true
+  stripe_min_width_ratio: 0.08
+  stripe_max_width_ratio: 0.82
+  temporal_smoothing: 0.35
 gamepad:
   transport: usb
   web_command_path: /tmp/edog_web_gamepad.json
-  axis_forward: 1
-  axis_side: 0
-  axis_roll: 3
-  axis_pitch: 4
-  axis_left_trigger: 2
-  axis_right_trigger: 5
+  axis_forward: 4
+  axis_side: 3
+  axis_yaw: 0
+  axis_height: 1
+  axis_roll: -1
+  axis_pitch: -1
+  axis_left_trigger: -1
+  axis_right_trigger: -1
   button_emergency_stop: 1
   button_manual: 4
   manual_button_required: false
   max_forward: 0.35
   max_side: 0.25
-  max_roll: 0.25
-  max_pitch: 0.25
+  max_yaw: 0.85
+  max_roll: 0.0
+  max_pitch: 0.0
   min_height: 100
   max_height: 180
   height_step: 1.8
+  height_axis_step: 1.8
   deadzone: 0.10
   gait: 2
   mode_buttons:

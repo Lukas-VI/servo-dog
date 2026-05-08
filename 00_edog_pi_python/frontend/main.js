@@ -15,31 +15,50 @@ const defaultConfig = {
     forward_speed: 0.18,
     max_side: 0.22,
     max_yaw: 0.9,
+    min_track_confidence: 0.18,
+    lost_rescue_s: 0.45,
+    lost_rescue_decay: 0.72,
   },
   branch: {
     default_turn: "straight",
     fork_confidence: 0.18,
     turn_bias: 0.28,
+    branch_error_blend: 0.85,
+    fork_speed_factor: 0.88,
+    branch_latch_s: 0.75,
+  },
+  vision: {
+    roi_start_ratio: 0.48,
+    gate_top_width_ratio: 0.66,
+    gate_bottom_width_ratio: 0.96,
+    exclude_background: true,
+    stripe_min_width_ratio: 0.08,
+    stripe_max_width_ratio: 0.82,
+    temporal_smoothing: 0.35,
   },
   gamepad: {
     transport: "usb",
     web_command_path: "/tmp/edog_web_gamepad.json",
-    axis_forward: 1,
-    axis_side: 0,
-    axis_roll: 3,
-    axis_pitch: 4,
-    axis_left_trigger: 2,
-    axis_right_trigger: 5,
+    axis_forward: 4,
+    axis_side: 3,
+    axis_yaw: 0,
+    axis_height: 1,
+    axis_roll: -1,
+    axis_pitch: -1,
+    axis_left_trigger: -1,
+    axis_right_trigger: -1,
     button_emergency_stop: 1,
     button_manual: 4,
     manual_button_required: false,
     max_forward: 0.35,
     max_side: 0.25,
-    max_roll: 0.25,
-    max_pitch: 0.25,
+    max_yaw: 0.85,
+    max_roll: 0,
+    max_pitch: 0,
     min_height: 100,
     max_height: 180,
     height_step: 1.8,
+    height_axis_step: 1.8,
     deadzone: 0.10,
     gait: 2,
     mode_buttons: { 0: "track", 2: "stop" },
@@ -85,6 +104,9 @@ const pidMeta = {
   forward_speed: ["前进速度", 0, 0.6, 0.01],
   max_side: ["横移限幅", 0, 0.6, 0.01],
   max_yaw: ["转向限幅", 0, 2, 0.01],
+  min_track_confidence: ["最低追踪置信度", 0.02, 0.6, 0.01],
+  lost_rescue_s: ["丢追救弯秒数", 0, 1.5, 0.05],
+  lost_rescue_decay: ["救弯衰减", 0, 1, 0.01],
 };
 const slamMeta = {
   feature_count: ["特征点数量", 20, 180, 1],
@@ -95,24 +117,40 @@ const slamMeta = {
 const branchMeta = {
   fork_confidence: ["岔路置信度", 0.05, 0.55, 0.01],
   turn_bias: ["岔路转向偏置", 0, 0.8, 0.01],
+  branch_error_blend: ["目标通道融合", 0, 1, 0.01],
+  fork_speed_factor: ["岔路速度系数", 0.2, 1, 0.01],
+  branch_latch_s: ["岔路锁定秒数", 0, 2, 0.05],
+};
+const visionMeta = {
+  roi_start_ratio: ["ROI 起始比例", 0.25, 0.75, 0.01],
+  gate_top_width_ratio: ["上方门控宽度", 0.25, 1.0, 0.01],
+  gate_bottom_width_ratio: ["底部门控宽度", 0.5, 1.0, 0.01],
+  exclude_background: ["排除背景", 0, 1, 1],
+  stripe_min_width_ratio: ["条带最小宽度", 0.02, 0.3, 0.01],
+  stripe_max_width_ratio: ["条带最大宽度", 0.3, 1, 0.01],
+  temporal_smoothing: ["时序平滑", 0, 0.9, 0.01],
 };
 const gamepadMeta = {
-  axis_forward: ["左摇杆前后轴", 0, 15, 1],
-  axis_side: ["左摇杆左右轴", 0, 15, 1],
-  axis_roll: ["右摇杆滚转轴", 0, 15, 1],
-  axis_pitch: ["右摇杆俯仰轴", 0, 15, 1],
-  axis_left_trigger: ["左扳机轴", 0, 15, 1],
-  axis_right_trigger: ["右扳机轴", 0, 15, 1],
+  axis_forward: ["右摇杆前后轴", -1, 15, 1],
+  axis_side: ["右摇杆左右轴", -1, 15, 1],
+  axis_yaw: ["左摇杆偏航轴", -1, 15, 1],
+  axis_height: ["左摇杆高度轴", -1, 15, 1],
+  axis_roll: ["滚转轴(禁用-1)", -1, 15, 1],
+  axis_pitch: ["俯仰轴(禁用-1)", -1, 15, 1],
+  axis_left_trigger: ["左扳机轴(可禁用)", -1, 15, 1],
+  axis_right_trigger: ["右扳机轴(可禁用)", -1, 15, 1],
   button_emergency_stop: ["急停按钮", 0, 31, 1],
   button_manual: ["手动保持按钮", 0, 31, 1],
   manual_button_required: ["必须按手动键", 0, 1, 1],
   max_forward: ["最大前后速度", 0, 0.8, 0.01],
   max_side: ["最大左右速度", 0, 0.8, 0.01],
+  max_yaw: ["最大偏航", 0, 2, 0.01],
   max_roll: ["最大滚转", 0, 0.8, 0.01],
   max_pitch: ["最大俯仰", 0, 0.8, 0.01],
   min_height: ["最低高度", 60, 180, 1],
   max_height: ["最高高度", 100, 220, 1],
-  height_step: ["高度步进", 0.2, 8, 0.1],
+  height_step: ["扳机高度步进", 0, 8, 0.1],
+  height_axis_step: ["摇杆高度步进", 0, 8, 0.1],
   deadzone: ["摇杆死区", 0, 0.35, 0.01],
   gait: ["步态编号", 0, 15, 1],
 };
@@ -123,6 +161,7 @@ let sourceImageData = null;
 let selectedNodeId = "start";
 let selectedEdgeIndex = 0;
 let liveRunning = false;
+let visionOverlay = false;
 let liveTimer = 0;
 let liveFrames = 0;
 let slamRunning = false;
@@ -267,7 +306,17 @@ function renderPidEditor() {
         <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-pid="${key}" />
         <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-pid="${key}" />
       </label>`;
-  }).join("");
+  }).join("") + `
+    <div class="mapping-block"><h3>视觉 ROI / 背景过滤</h3></div>
+    ${Object.entries(visionMeta).map(([key, [label, min, max, step]]) => {
+      const value = config.vision?.[key] ?? defaultConfig.vision[key];
+      return `
+        <label class="param-row">
+          <span>${label}</span>
+          <input type="range" min="${min}" max="${max}" step="${step}" value="${Number(value)}" data-vision="${key}" />
+          <input type="number" min="${min}" max="${max}" step="${step}" value="${Number(value)}" data-vision="${key}" />
+        </label>`;
+    }).join("")}`;
 }
 
 function renderSlamEditor() {
@@ -324,6 +373,32 @@ function renderMask() {
   maskCanvas.height = sourceImageData.height;
   maskCtx.putImageData(output, 0, 0);
   $("maskRatio").textContent = `${((hits / (sourceImageData.width * sourceImageData.height)) * 100).toFixed(1)}%`;
+}
+
+function taskGraphToMap() {
+  return {
+    name: $("mapNameInput")?.value?.trim() || "race_track_v1",
+    version: 1,
+    created_at: new Date().toISOString(),
+    mode: "line_topology",
+    branch_default: config.branch?.default_turn || "straight",
+    nodes: structuredCloneSafe(config.task_graph.nodes || []),
+    edges: structuredCloneSafe(config.task_graph.edges || []),
+    notes: "纯巡线赛道拓扑图；节点表示岔路、颜色触发点或动作点，边上的 condition 用于自动任务状态机。",
+  };
+}
+
+function mapToTaskGraph(mapData) {
+  if (!mapData || !Array.isArray(mapData.nodes) || !Array.isArray(mapData.edges)) {
+    throw new Error("地图 JSON 缺少 nodes/edges");
+  }
+  config.task_graph = {
+    nodes: structuredCloneSafe(mapData.nodes),
+    edges: structuredCloneSafe(mapData.edges),
+  };
+  if (mapData.branch_default) config.branch.default_turn = mapData.branch_default;
+  selectedNodeId = config.task_graph.nodes[0]?.id || "";
+  selectedEdgeIndex = 0;
 }
 
 function drawImageToSource(image) {
@@ -628,6 +703,8 @@ function toYaml(data) {
   Object.entries(data.pid).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   lines.push("branch:");
   Object.entries(data.branch || defaultConfig.branch).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
+  lines.push("vision:");
+  Object.entries(data.vision || defaultConfig.vision).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   lines.push("gamepad:");
   Object.entries(data.gamepad || defaultConfig.gamepad).forEach(([key, value]) => {
     if (typeof value === "object" && value !== null) {
@@ -674,6 +751,7 @@ async function loadConfig() {
     config = { ...structuredCloneSafe(defaultConfig), ...(await response.json()) };
     config.pid = { ...defaultConfig.pid, ...(config.pid || {}) };
     config.branch = { ...defaultConfig.branch, ...(config.branch || {}) };
+    config.vision = { ...defaultConfig.vision, ...(config.vision || {}) };
     config.gamepad = { ...structuredCloneSafe(defaultConfig.gamepad), ...(config.gamepad || {}) };
     config.gamepad.mode_buttons = { ...defaultConfig.gamepad.mode_buttons, ...(config.gamepad.mode_buttons || {}) };
     config.gamepad.action_buttons = { ...defaultConfig.gamepad.action_buttons, ...(config.gamepad.action_buttons || {}) };
@@ -693,21 +771,39 @@ async function loadConfig() {
 async function pollLiveFrame() {
   if (!liveRunning) return;
   try {
-    const response = await fetch(`/api/frame.jpg?t=${Date.now()}`, { cache: "no-store" });
+    const framePath = visionOverlay ? "/api/vision/frame.jpg" : "/api/frame.jpg";
+    const response = await fetch(`${framePath}?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(await response.text());
     const blob = await response.blob();
     const image = new Image();
     image.onload = () => {
       liveFrames += 1;
       drawImageToSource(image);
-      $("sourceLabel").textContent = `实时摄像头 · ${sourceCanvas.width}×${sourceCanvas.height} · ${liveFrames}`;
+      $("sourceLabel").textContent = `${visionOverlay ? "轨道提取" : "实时摄像头"} · ${sourceCanvas.width}×${sourceCanvas.height} · ${liveFrames}`;
       URL.revokeObjectURL(image.src);
     };
     image.src = URL.createObjectURL(blob);
+    if (visionOverlay) refreshVisionStatus();
   } catch (error) {
     $("sourceLabel").textContent = `摄像头未就绪 · ${String(error).slice(0, 80)}`;
   } finally {
     liveTimer = window.setTimeout(pollLiveFrame, 120);
+  }
+}
+
+async function refreshVisionStatus() {
+  try {
+    const status = await fetch("/api/vision/status", { cache: "no-store" }).then((response) => response.json());
+    const vision = status.vision || {};
+    if (!vision.ok) {
+      $("visionMetric").textContent = vision.message || "未就绪";
+      return;
+    }
+    const branches = Array.isArray(vision.branches) && vision.branches.length ? vision.branches.join(",") : "-";
+    const offsets = vision.branch_offsets ? Object.entries(vision.branch_offsets).map(([k, v]) => `${k}:${Number(v).toFixed(2)}`).join(" ") : "";
+    $("visionMetric").textContent = `err ${Number(vision.line_error || 0).toFixed(2)} / conf ${Number(vision.confidence || 0).toFixed(2)} / ${branches}${offsets ? " / " + offsets : ""}`;
+  } catch {
+    $("visionMetric").textContent = "接口不可用";
   }
 }
 
@@ -749,6 +845,48 @@ async function saveConfig() {
   renderYaml();
 }
 
+async function saveMap() {
+  const name = $("mapNameInput").value.trim() || "race_track_v1";
+  try {
+    const response = await fetch(`/api/maps/${encodeURIComponent(name)}.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(taskGraphToMap()),
+    });
+    if (!response.ok) throw new Error(response.statusText);
+    $("saveState").textContent = `地图已保存：${name}`;
+  } catch {
+    localStorage.setItem(`edog-map-${name}`, JSON.stringify(taskGraphToMap()));
+    $("saveState").textContent = `后端不可用，地图已保存到浏览器：${name}`;
+  }
+}
+
+async function loadMap() {
+  const name = $("mapNameInput").value.trim() || "race_track_v1";
+  try {
+    const response = await fetch(`/api/maps/${encodeURIComponent(name)}.json`, { cache: "no-store" });
+    if (!response.ok) throw new Error(response.statusText);
+    mapToTaskGraph(await response.json());
+    $("saveState").textContent = `地图已读取：${name}`;
+  } catch {
+    const saved = localStorage.getItem(`edog-map-${name}`);
+    if (!saved) {
+      $("saveState").textContent = `没有找到地图：${name}`;
+      return;
+    }
+    mapToTaskGraph(JSON.parse(saved));
+    $("saveState").textContent = `已读取浏览器地图：${name}`;
+  }
+  renderAll();
+}
+
+function exportMap() {
+  const text = JSON.stringify(taskGraphToMap(), null, 2);
+  navigator.clipboard?.writeText(text);
+  $("yamlOutput").value = text;
+  $("saveState").textContent = "地图 JSON 已复制";
+}
+
 async function sendRuntimeCommand(command) {
   const height = Number(config.stand_height || defaultConfig.stand_height);
   const body = {
@@ -780,6 +918,11 @@ async function pollRuntimeStatus() {
     $("runtimeSource").textContent = status.gamepad?.source || (status.gamepad?.connected ? "unknown" : "none");
     $("runtimeWrites").textContent = String(status.write_count || 0);
     $("runtimeFrame").textContent = status.last_frame_hex || "-";
+    if (status.map_pose?.ok) {
+      $("runtimePose").textContent = `${status.map_pose.from || "?"}->${status.map_pose.to || "?"} ${(Number(status.map_pose.progress || 0) * 100).toFixed(0)}%`;
+    } else {
+      $("runtimePose").textContent = status.map_pose?.message || "-";
+    }
     $("runtimeRaw").textContent = JSON.stringify(status, null, 2);
   } catch (error) {
     $("runtimeRaw").textContent = `runtime 状态不可用: ${String(error)}`;
@@ -796,6 +939,11 @@ function bindEvents() {
   $("overlayAlpha").addEventListener("input", renderMask);
   $("imageInput").addEventListener("change", loadImage);
   $("liveBtn").addEventListener("click", startLive);
+  $("visionBtn").addEventListener("click", () => {
+    visionOverlay = !visionOverlay;
+    $("visionBtn").classList.toggle("primary", visionOverlay);
+    if (!liveRunning) startLive();
+  });
   $("pauseLiveBtn").addEventListener("click", stopLive);
   $("loadConfigBtn").addEventListener("click", loadConfig);
   $("saveConfigBtn").addEventListener("click", saveConfig);
@@ -812,6 +960,9 @@ function bindEvents() {
   $("runtimeLeftBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "byroad_a" }));
   $("runtimeStraightBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "track" }));
   $("runtimeRightBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "byroad_b" }));
+  $("saveMapBtn").addEventListener("click", saveMap);
+  $("loadMapBtn").addEventListener("click", loadMap);
+  $("exportMapBtn").addEventListener("click", exportMap);
   document.body.addEventListener("input", handleInput);
   document.body.addEventListener("click", handleClick);
 }
@@ -844,6 +995,12 @@ function handleInput(event) {
     renderSlam();
     renderYaml();
   }
+  if (target.dataset.vision) {
+    const key = target.dataset.vision;
+    config.vision[key] = key === "exclude_background" ? Number(target.value) >= 0.5 : Number(target.value);
+    renderPidEditor();
+    renderYaml();
+  }
   if (target.dataset.gamepad) {
     const key = target.dataset.gamepad;
     if (key === "transport" || key === "web_command_path") {
@@ -851,7 +1008,7 @@ function handleInput(event) {
       renderYaml();
       return;
     }
-    const integerKeys = new Set(["axis_forward", "axis_side", "axis_roll", "axis_pitch", "axis_left_trigger", "axis_right_trigger", "button_emergency_stop", "button_manual", "min_height", "max_height", "gait"]);
+    const integerKeys = new Set(["axis_forward", "axis_side", "axis_yaw", "axis_height", "axis_roll", "axis_pitch", "axis_left_trigger", "axis_right_trigger", "button_emergency_stop", "button_manual", "min_height", "max_height", "gait"]);
     if (key === "manual_button_required") {
       config.gamepad[key] = Number(target.value) >= 0.5;
     } else {

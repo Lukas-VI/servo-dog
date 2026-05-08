@@ -34,6 +34,7 @@ class VisionResult:
     confidence: float = 0.0
     branches: Tuple[str, ...] = ()
     branch_confidence: float = 0.0
+    branch_offsets: Optional[Dict[str, float]] = None
     detected_colors: Optional[Dict[str, float]] = None
     debug_frame: object = None
 

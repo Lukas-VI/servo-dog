@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 try:
     import yaml
@@ -22,6 +22,9 @@ class PIDConfig:
     forward_speed: float = 0.18
     max_side: float = 0.22
     max_yaw: float = 0.9
+    min_track_confidence: float = 0.18
+    lost_rescue_s: float = 0.45
+    lost_rescue_decay: float = 0.72
 
 
 @dataclass
@@ -29,28 +32,46 @@ class BranchConfig:
     default_turn: str = "straight"
     fork_confidence: float = 0.18
     turn_bias: float = 0.28
+    branch_error_blend: float = 0.85
+    fork_speed_factor: float = 0.88
+    branch_latch_s: float = 0.75
+
+
+@dataclass
+class VisionConfig:
+    roi_start_ratio: float = 0.48
+    gate_top_width_ratio: float = 0.66
+    gate_bottom_width_ratio: float = 0.96
+    exclude_background: bool = True
+    stripe_min_width_ratio: float = 0.08
+    stripe_max_width_ratio: float = 0.82
+    temporal_smoothing: float = 0.35
 
 
 @dataclass
 class GamepadConfig:
     transport: str = "usb"
     web_command_path: str = "/tmp/edog_web_gamepad.json"
-    axis_forward: int = 1
-    axis_side: int = 0
-    axis_roll: int = 3
-    axis_pitch: int = 4
-    axis_left_trigger: int = 2
-    axis_right_trigger: int = 5
+    axis_forward: int = 4
+    axis_side: int = 3
+    axis_yaw: int = 0
+    axis_height: int = 1
+    axis_roll: int = -1
+    axis_pitch: int = -1
+    axis_left_trigger: int = -1
+    axis_right_trigger: int = -1
     button_emergency_stop: int = 1
     button_manual: int = 4
     manual_button_required: bool = False
     max_forward: float = 0.35
     max_side: float = 0.25
-    max_roll: float = 0.25
-    max_pitch: float = 0.25
+    max_yaw: float = 0.85
+    max_roll: float = 0.0
+    max_pitch: float = 0.0
     min_height: int = 100
     max_height: int = 180
     height_step: float = 1.8
+    height_axis_step: float = 1.8
     deadzone: float = 0.10
     gait: int = 2
     mode_buttons: Dict[str, str] = field(default_factory=lambda: {"0": "track", "2": "stop"})
@@ -70,8 +91,10 @@ class RuntimeConfig:
     debug: bool = False
     pid: PIDConfig = field(default_factory=PIDConfig)
     branch: BranchConfig = field(default_factory=BranchConfig)
+    vision: VisionConfig = field(default_factory=VisionConfig)
     gamepad: GamepadConfig = field(default_factory=GamepadConfig)
     colors_hsv: Dict[str, ColorRange] = field(default_factory=dict)
+    task_graph: Dict[str, Any] = field(default_factory=lambda: {"nodes": [], "edges": []})
 
 
 DEFAULT_COLORS: Dict[str, ColorRange] = {
@@ -118,10 +141,10 @@ def _read_known_yaml(path: Path) -> Dict:
             key, value = line.split(":", 1)
             data[key] = _parse_scalar(value)
             section = None
-        elif section in {"pid", "branch", "gamepad"} and indent == 2 and line.endswith(":"):
+        elif section in {"pid", "branch", "vision", "gamepad"} and indent == 2 and line.endswith(":"):
             gamepad_map = line[:-1].strip()
             data[section].setdefault(gamepad_map, {})
-        elif section in {"pid", "branch", "gamepad"} and indent == 2 and ":" in line:
+        elif section in {"pid", "branch", "vision", "gamepad"} and indent == 2 and ":" in line:
             key, value = line.split(":", 1)
             data[section][key.strip()] = _parse_scalar(value)
             gamepad_map = None
@@ -152,6 +175,9 @@ def load_config(path: Optional[str]) -> RuntimeConfig:
         elif key == "branch":
             for branch_key, branch_value in value.items():
                 setattr(cfg.branch, branch_key, branch_value)
+        elif key == "vision":
+            for vision_key, vision_value in value.items():
+                setattr(cfg.vision, vision_key, vision_value)
         elif key == "gamepad":
             for gamepad_key, gamepad_value in value.items():
                 if gamepad_key in {"mode_buttons", "action_buttons"}:
@@ -163,6 +189,8 @@ def load_config(path: Optional[str]) -> RuntimeConfig:
                 name: (tuple(v["min"]), tuple(v["max"]))
                 for name, v in value.items()
             }
+        elif key == "task_graph":
+            cfg.task_graph = value or {"nodes": [], "edges": []}
         elif hasattr(cfg, key):
             setattr(cfg, key, value)
     return cfg

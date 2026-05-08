@@ -13,22 +13,26 @@ from ..models import GamepadCommand, Mode, MotionCommand
 
 @dataclass
 class GamepadMapping:
-    axis_forward: int = 1
-    axis_side: int = 0
-    axis_roll: int = 3
-    axis_pitch: int = 4
-    axis_left_trigger: int = 2
-    axis_right_trigger: int = 5
+    axis_forward: int = 4
+    axis_side: int = 3
+    axis_yaw: int = 0
+    axis_height: int = 1
+    axis_roll: int = -1
+    axis_pitch: int = -1
+    axis_left_trigger: int = -1
+    axis_right_trigger: int = -1
     button_emergency_stop: int = 1
     button_manual: int = 4
     manual_button_required: bool = False
     max_forward: float = 0.35
     max_side: float = 0.25
-    max_roll: float = 0.25
-    max_pitch: float = 0.25
+    max_yaw: float = 0.85
+    max_roll: float = 0.0
+    max_pitch: float = 0.0
     min_height: int = 100
     max_height: int = 180
     height_step: float = 1.8
+    height_axis_step: float = 1.8
     deadzone: float = 0.10
     gait: int = 2
     mode_buttons: Dict[str, str] = field(default_factory=lambda: {"0": "track", "2": "stop"})
@@ -41,6 +45,8 @@ def mapping_from_config(cfg: Optional[GamepadConfig]) -> GamepadMapping:
     return GamepadMapping(
         axis_forward=cfg.axis_forward,
         axis_side=cfg.axis_side,
+        axis_yaw=cfg.axis_yaw,
+        axis_height=cfg.axis_height,
         axis_roll=cfg.axis_roll,
         axis_pitch=cfg.axis_pitch,
         axis_left_trigger=cfg.axis_left_trigger,
@@ -50,11 +56,13 @@ def mapping_from_config(cfg: Optional[GamepadConfig]) -> GamepadMapping:
         manual_button_required=cfg.manual_button_required,
         max_forward=cfg.max_forward,
         max_side=cfg.max_side,
+        max_yaw=cfg.max_yaw,
         max_roll=cfg.max_roll,
         max_pitch=cfg.max_pitch,
         min_height=cfg.min_height,
         max_height=cfg.max_height,
         height_step=cfg.height_step,
+        height_axis_step=cfg.height_axis_step,
         deadzone=cfg.deadzone,
         gait=cfg.gait,
         mode_buttons=dict(cfg.mode_buttons),
@@ -112,21 +120,27 @@ class GamepadReader:
                 selected_action = action
                 break
 
-        height_delta = self._trigger(m.axis_right_trigger) - self._trigger(m.axis_left_trigger)
-        self._stand_height = int(max(m.min_height, min(m.max_height, self._stand_height + height_delta * m.height_step)))
+        height_axis_value = self._axis(m.axis_height)
+        height_delta = (self._trigger(m.axis_right_trigger) - self._trigger(m.axis_left_trigger)) * m.height_step
+        if m.axis_height >= 0:
+            throttle = (1.0 - self._raw_axis(m.axis_height)) * 0.5
+            self._stand_height = int(m.min_height + max(0.0, min(1.0, throttle)) * (m.max_height - m.min_height))
+        else:
+            self._stand_height = int(max(m.min_height, min(m.max_height, self._stand_height + height_delta)))
 
         motion = MotionCommand(
             forward=-self._axis(m.axis_forward) * m.max_forward,
-            side=self._axis(m.axis_side) * m.max_side,
+            side=-self._axis(m.axis_side) * m.max_side,
+            yaw=-self._axis(m.axis_yaw) * m.max_yaw,
             roll=self._axis(m.axis_roll) * m.max_roll,
-            pitch=-self._axis(m.axis_pitch) * m.max_pitch,
+            pitch=0.0 if m.axis_pitch < 0 else -self._axis(m.axis_pitch) * m.max_pitch,
             stand_height=self._stand_height,
             gait=m.gait,
         )
         motion_active = any(
             abs(value) > 0.001
             for value in (motion.forward, motion.side, motion.yaw, motion.roll, motion.pitch)
-        ) or abs(height_delta) > 0.001
+        ) or abs(height_delta) > 0.001 or abs(height_axis_value) > 0.001
         manual = manual_button or (motion_active and not m.manual_button_required)
         return GamepadCommand(
             connected=True,
@@ -142,10 +156,19 @@ class GamepadReader:
         )
 
     def _axis(self, index: int) -> float:
+        if index < 0 or index >= self._joystick.get_numaxes():
+            return 0.0
         value = float(self._joystick.get_axis(index))
         return 0.0 if abs(value) < self.mapping.deadzone else value
 
+    def _raw_axis(self, index: int) -> float:
+        if index < 0 or index >= self._joystick.get_numaxes():
+            return 0.0
+        return float(self._joystick.get_axis(index))
+
     def _button(self, index: int) -> bool:
+        if index < 0 or index >= self._joystick.get_numbuttons():
+            return False
         return bool(self._joystick.get_button(index))
 
     def _trigger(self, index: int) -> float:

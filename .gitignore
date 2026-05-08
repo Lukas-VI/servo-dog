@@ -1,1 +1,6 @@
 ./alternative/
+Orchard/OpenCV_SmartCar-master/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+output/

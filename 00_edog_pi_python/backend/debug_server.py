@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
+from .config import load_config
+from .models import VisionResult
+from .vision.pure_vision import PureVisionTracker
+
 try:
     import yaml
 except ImportError:
@@ -32,26 +36,54 @@ DEFAULT_BRANCH = {
     "default_turn": "straight",
     "fork_confidence": 0.18,
     "turn_bias": 0.28,
+    "branch_error_blend": 0.85,
+    "fork_speed_factor": 0.88,
+    "branch_latch_s": 0.75,
+}
+DEFAULT_PID = {
+    "kp_side": 0.12,
+    "kd_side": 0.04,
+    "kp_yaw": 0.80,
+    "kd_yaw": 0.18,
+    "forward_speed": 0.18,
+    "max_side": 0.22,
+    "max_yaw": 0.9,
+    "min_track_confidence": 0.18,
+    "lost_rescue_s": 0.45,
+    "lost_rescue_decay": 0.72,
+}
+DEFAULT_VISION = {
+    "roi_start_ratio": 0.48,
+    "gate_top_width_ratio": 0.66,
+    "gate_bottom_width_ratio": 0.96,
+    "exclude_background": True,
+    "stripe_min_width_ratio": 0.08,
+    "stripe_max_width_ratio": 0.82,
+    "temporal_smoothing": 0.35,
 }
 DEFAULT_GAMEPAD = {
     "transport": "usb",
     "web_command_path": "/tmp/edog_web_gamepad.json",
-    "axis_forward": 1,
-    "axis_side": 0,
-    "axis_roll": 3,
-    "axis_pitch": 4,
-    "axis_left_trigger": 2,
-    "axis_right_trigger": 5,
+    "axis_forward": 4,
+    "axis_side": 3,
+    "axis_yaw": 0,
+    "axis_height": 1,
+    "axis_roll": -1,
+    "axis_pitch": -1,
+    "axis_left_trigger": -1,
+    "axis_right_trigger": -1,
     "button_emergency_stop": 1,
     "button_manual": 4,
     "manual_button_required": False,
     "max_forward": 0.35,
     "max_side": 0.25,
-    "max_roll": 0.25,
-    "max_pitch": 0.25,
+    "max_yaw": 0.85,
+    "max_roll": 0.0,
+    "max_pitch": 0.0,
     "min_height": 100,
     "max_height": 180,
     "height_step": 1.8,
+    "height_axis_step": 1.8,
     "deadzone": 0.10,
     "gait": 2,
     "mode_buttons": {"0": "track", "2": "stop"},
@@ -67,6 +99,8 @@ class CameraState:
     height: int = 480
     jpeg_quality: int = 72
     frame: Optional[bytes] = None
+    vision_frame: Optional[bytes] = None
+    vision: Optional[Dict[str, Any]] = None
     ok: bool = False
     message: str = "camera not started"
     frames: int = 0
@@ -74,8 +108,9 @@ class CameraState:
 
 
 class CameraStream:
-    def __init__(self, state: CameraState) -> None:
+    def __init__(self, state: CameraState, config_path: Path = DEFAULT_CONFIG) -> None:
         self.state = state
+        self.config_path = config_path
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -94,6 +129,12 @@ class CameraStream:
     def snapshot(self) -> Tuple[Optional[bytes], Dict[str, Any]]:
         with self._lock:
             return self.state.frame, self.status()
+
+    def vision_snapshot(self) -> Tuple[Optional[bytes], Dict[str, Any]]:
+        with self._lock:
+            status = self.status()
+            status["vision"] = self.state.vision or {}
+            return self.state.vision_frame, status
 
     def status(self) -> Dict[str, Any]:
         return {
@@ -114,6 +155,13 @@ class CameraStream:
                 self.state.ok = False
                 self.state.message = f"cv2 import failed: {exc}"
             return
+
+        tracker: Optional[PureVisionTracker] = None
+        try:
+            tracker = PureVisionTracker(load_config(str(self.config_path)))
+        except Exception as exc:
+            with self._lock:
+                self.state.vision = {"ok": False, "message": f"vision tracker init failed: {exc}"}
 
         source: Any = int(self.state.source) if str(self.state.source).isdigit() else self.state.source
         cap = cv2.VideoCapture(source)
@@ -143,8 +191,31 @@ class CameraStream:
                     self.state.ok = False
                     self.state.message = "jpeg encode failed"
                 continue
+            vision_frame = None
+            vision_payload: Dict[str, Any] = {"ok": False, "message": "vision tracker disabled"}
+            if tracker is not None:
+                try:
+                    result: VisionResult = tracker.process(frame)
+                    ok_debug, encoded_debug = cv2.imencode(".jpg", result.debug_frame, encode_param)
+                    if ok_debug:
+                        vision_frame = encoded_debug.tobytes()
+                    vision_payload = {
+                        "ok": True,
+                        "line_error": result.line_error,
+                        "line_angle": result.line_angle,
+                        "confidence": result.confidence,
+                        "branches": list(result.branches),
+                        "branch_confidence": result.branch_confidence,
+                        "branch_offsets": result.branch_offsets or {},
+                        "detected_colors": result.detected_colors or {},
+                    }
+                except Exception as exc:
+                    vision_payload = {"ok": False, "message": str(exc)}
             with self._lock:
                 self.state.frame = encoded.tobytes()
+                if vision_frame:
+                    self.state.vision_frame = vision_frame
+                self.state.vision = vision_payload
                 self.state.ok = True
                 self.state.message = "streaming"
                 self.state.frames += 1
@@ -169,8 +240,9 @@ def _parse_scalar(value: str) -> Any:
 
 def _read_known_yaml(path: Path) -> Dict[str, Any]:
     data: Dict[str, Any] = {
-        "pid": {},
+        "pid": dict(DEFAULT_PID),
         "branch": dict(DEFAULT_BRANCH),
+        "vision": dict(DEFAULT_VISION),
         "gamepad": dict(DEFAULT_GAMEPAD),
         "colors_hsv": {},
         "task_graph": {"nodes": [], "edges": []},
@@ -209,6 +281,9 @@ def _read_known_yaml(path: Path) -> Dict[str, Any]:
         elif section == "branch" and indent == 2 and ":" in line:
             key, value = line.split(":", 1)
             data["branch"][key.strip()] = _parse_scalar(value)
+        elif section == "vision" and indent == 2 and ":" in line:
+            key, value = line.split(":", 1)
+            data["vision"][key.strip()] = _parse_scalar(value)
         elif section == "gamepad" and indent == 2 and line.endswith(":"):
             gamepad_map = line[:-1].strip()
             data["gamepad"].setdefault(gamepad_map, {})
@@ -246,8 +321,9 @@ def read_config(path: Path) -> Dict[str, Any]:
         loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     else:
         loaded = _read_known_yaml(path)
-    loaded.setdefault("pid", {})
+    loaded.setdefault("pid", dict(DEFAULT_PID))
     loaded.setdefault("branch", dict(DEFAULT_BRANCH))
+    loaded.setdefault("vision", dict(DEFAULT_VISION))
     loaded.setdefault("gamepad", dict(DEFAULT_GAMEPAD))
     loaded.setdefault("colors_hsv", {})
     loaded.setdefault("task_graph", {"nodes": [], "edges": []})
@@ -258,6 +334,10 @@ def read_config(path: Path) -> Dict[str, Any]:
         loaded["slam_demo"].setdefault(key, value)
     for key, value in DEFAULT_BRANCH.items():
         loaded["branch"].setdefault(key, value)
+    for key, value in DEFAULT_PID.items():
+        loaded["pid"].setdefault(key, value)
+    for key, value in DEFAULT_VISION.items():
+        loaded["vision"].setdefault(key, value)
     for key, value in DEFAULT_GAMEPAD.items():
         loaded["gamepad"].setdefault(key, value)
     return loaded
@@ -286,6 +366,10 @@ def dump_config(data: Dict[str, Any]) -> str:
     lines.append("branch:")
     branch = data.get("branch") or DEFAULT_BRANCH
     for key, value in branch.items():
+        lines.append(f"  {key}: {_yaml_value(value)}")
+    lines.append("vision:")
+    vision = data.get("vision") or DEFAULT_VISION
+    for key, value in vision.items():
         lines.append(f"  {key}: {_yaml_value(value)}")
     lines.append("gamepad:")
     gamepad = data.get("gamepad") or DEFAULT_GAMEPAD
@@ -345,11 +429,23 @@ class DebugHandler(SimpleHTTPRequestHandler):
         if path == "/api/frame.jpg":
             self._send_frame()
             return
+        if path == "/api/vision/frame.jpg":
+            self._send_vision_frame()
+            return
+        if path == "/api/vision/status":
+            self._send_vision_status()
+            return
         if path == "/api/gamepad":
             self._send_gamepad()
             return
         if path == "/api/runtime/status":
             self._send_runtime_status()
+            return
+        if path == "/api/maps":
+            self._send_maps()
+            return
+        if path.startswith("/api/maps/"):
+            self._send_map(path)
             return
         if path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
@@ -358,8 +454,12 @@ class DebugHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        path = urlparse(self.path).path
         if self.path == "/api/gamepad":
             self._receive_gamepad()
+            return
+        if path.startswith("/api/maps/"):
+            self._save_map(path)
             return
         if self.path != "/api/config":
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -383,6 +483,18 @@ class DebugHandler(SimpleHTTPRequestHandler):
         config = read_config(self.config_path)
         return Path(str(config.get("runtime_status_path", DEFAULT_RUNTIME_STATUS)))
 
+    def _maps_dir(self) -> Path:
+        return self.config_path.parent / "maps"
+
+    def _map_path(self, request_path: str) -> Path:
+        name = Path(urlparse(request_path).path).name
+        if not name.endswith(".json"):
+            name = f"{name}.json"
+        safe = "".join(ch for ch in name if ch.isalnum() or ch in {"-", "_", "."})
+        if not safe or safe in {".json", "..json"}:
+            raise ValueError("invalid map name")
+        return self._maps_dir() / safe
+
     def _send_runtime_status(self) -> None:
         path = self._runtime_status_path()
         if not path.exists():
@@ -392,6 +504,44 @@ class DebugHandler(SimpleHTTPRequestHandler):
             self._send_json(json.loads(path.read_text(encoding="utf-8")))
         except Exception as exc:
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+
+    def _send_maps(self) -> None:
+        root = self._maps_dir()
+        maps = []
+        if root.exists():
+            for path in sorted(root.glob("*.json")):
+                maps.append({"name": path.stem, "file": path.name, "updated_at": path.stat().st_mtime})
+        self._send_json({"ok": True, "maps": maps, "dir": str(root)})
+
+    def _send_map(self, request_path: str) -> None:
+        try:
+            path = self._map_path(request_path)
+            if not path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND, "map not found")
+                return
+            self._send_json(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+
+    def _save_map(self, request_path: str) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = self.rfile.read(length)
+        try:
+            data = json.loads(payload.decode("utf-8"))
+            path = self._map_path(request_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
+        self._send_json({"ok": True, "path": str(path)})
+
+    def _send_vision_status(self) -> None:
+        if not self.camera:
+            self._send_json({"ok": False, "message": "camera disabled"})
+            return
+        _, status = self.camera.vision_snapshot()
+        self._send_json(status)
 
     def _send_gamepad(self) -> None:
         path = self._gamepad_command_path()
@@ -439,6 +589,20 @@ class DebugHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(frame)
 
+    def _send_vision_frame(self) -> None:
+        if not self.camera:
+            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "camera disabled")
+            return
+        frame, status = self.camera.vision_snapshot()
+        if not frame:
+            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, status.get("message", "no vision frame"))
+            return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(frame)))
+        self.end_headers()
+        self.wfile.write(frame)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Browser debug console for e-Dog Python runtime")
@@ -464,7 +628,8 @@ def main() -> int:
                 width=args.camera_width,
                 height=args.camera_height,
                 jpeg_quality=args.jpeg_quality,
-            )
+            ),
+            Path(args.config).resolve(),
         )
         camera.start()
     DebugHandler.camera = camera

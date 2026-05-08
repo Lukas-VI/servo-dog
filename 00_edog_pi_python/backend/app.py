@@ -73,6 +73,7 @@ def main() -> int:
             "last_serial_error": getattr(backend, "last_error", ""),
             "write_count": getattr(backend, "write_count", 0),
             "vision_available": vision_available,
+            "map_pose": state.map_pose,
         }
         try:
             status_path.parent.mkdir(parents=True, exist_ok=True)
