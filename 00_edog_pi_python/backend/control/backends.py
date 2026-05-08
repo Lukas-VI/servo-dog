@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import List, Protocol
+from typing import List
+
+try:
+    from typing import Protocol
+except ImportError:  # Python 3.7 on the robot image does not provide typing.Protocol.
+    class Protocol:  # type: ignore
+        pass
 
 from ..models import MotionCommand
 from ..protocol import frame_hex, pack_motion, pack_named_action, pack_stop

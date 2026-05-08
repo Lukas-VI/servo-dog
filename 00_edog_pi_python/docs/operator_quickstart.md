@@ -85,6 +85,13 @@ cd /home/pi/edog_pi_python/current
 ./run_serial.sh --mode stop
 ```
 
+只使用 Web/手柄控制、不打开摄像头：
+
+```bash
+cd /home/pi/edog_pi_python/current
+./run_control_only.sh --mode stop
+```
+
 开始自动巡线：
 
 ```bash
@@ -173,8 +180,10 @@ sudo systemctl restart edog-runner.service
 sudo systemctl start edog-runner.service
 ```
 
+`edog-runner.service` 默认使用 `run_control_only.sh`，也就是不抢 Web 调试台的摄像头，主要负责手柄、Web 初始化、开始、结束、动作和站高控制。需要自动视觉巡线时，停止 Web 摄像头服务或改用 `run_serial.sh --mode track` 独占摄像头。
+
 6. 放置机器人。
-7. 用手柄按 `A` 进入 `track`，或命令行直接：
+7. 用 Web 的“开始巡线”或手柄按 `A` 进入 `track`。如果要自动视觉闭环，命令行直接：
 
 ```bash
 cd /home/pi/edog_pi_python/current

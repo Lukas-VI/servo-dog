@@ -33,7 +33,7 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/edog_pi_python/current
-ExecStart=/home/pi/edog_pi_python/current/run_serial.sh --mode stop
+ExecStart=/home/pi/edog_pi_python/current/run_control_only.sh --mode stop
 Restart=on-failure
 RestartSec=3
 

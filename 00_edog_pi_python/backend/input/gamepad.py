@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 import time
 from pathlib import Path
 from typing import Dict, Optional
@@ -68,9 +69,11 @@ class GamepadReader:
         self._joystick = None
         self._available = False
         try:
+            os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
             import pygame
 
             pygame.init()
+            pygame.display.init()
             pygame.joystick.init()
             if pygame.joystick.get_count() > 0:
                 self._joystick = pygame.joystick.Joystick(0)
@@ -83,7 +86,11 @@ class GamepadReader:
     def poll(self) -> GamepadCommand:
         if not self._available or self._pygame is None or self._joystick is None:
             return GamepadCommand(connected=False)
-        self._pygame.event.pump()
+        try:
+            self._pygame.event.pump()
+        except Exception:
+            self._available = False
+            return GamepadCommand(connected=False)
         m = self.mapping
         pressed = {index for index in range(self._joystick.get_numbuttons()) if self._button(index)}
         rising = pressed - self._last_buttons
@@ -139,8 +146,7 @@ class WebGamepadReader:
     def __init__(self, command_path: str, timeout_s: float = 0.8) -> None:
         self.command_path = Path(command_path)
         self.timeout_s = timeout_s
-        self._last_mode = None
-        self._last_action = None
+        self._last_action_stamp = 0.0
 
     def poll(self) -> GamepadCommand:
         if not self.command_path.exists():
@@ -157,10 +163,10 @@ class WebGamepadReader:
         motion_data = data.get("motion") or {}
         selected_mode = data.get("selected_mode")
         selected_action = data.get("selected_action")
-        mode = Mode(selected_mode) if selected_mode and selected_mode != self._last_mode else None
-        action = selected_action if selected_action and selected_action != self._last_action else None
-        self._last_mode = selected_mode
-        self._last_action = selected_action
+        mode = Mode(selected_mode) if selected_mode else None
+        action = selected_action if selected_action and updated_at != self._last_action_stamp else None
+        if action:
+            self._last_action_stamp = updated_at
         return GamepadCommand(
             connected=True,
             emergency_stop=bool(data.get("emergency_stop", False)),

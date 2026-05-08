@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import load_config
 from .control.backends import make_backend
-from .input.gamepad import make_gamepad_reader
+from .input.gamepad import WebGamepadReader, make_gamepad_reader
 from .models import Mode
 from .state import EdogStateMachine
 from .vision.pure_vision import PureVisionTracker, VisionDebug
@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--serial-port", default=None)
     parser.add_argument("--mode", default="stop", choices=[m.value for m in Mode])
     parser.add_argument("--video", default=None, help="camera index or video path")
+    parser.add_argument("--no-vision", action="store_true", help="run gamepad/web control without opening a camera")
     parser.add_argument("--debug-dir", default=None)
     parser.add_argument("--no-gamepad", action="store_true")
     return parser.parse_args()
@@ -45,6 +46,7 @@ def main() -> int:
     )
     state = EdogStateMachine(cfg, Mode(args.mode))
     gamepad = None if args.no_gamepad else make_gamepad_reader(cfg.gamepad, cfg.stand_height)
+    web_control = None if args.no_gamepad else WebGamepadReader(cfg.gamepad.web_command_path)
     stopping = False
 
     def request_stop(_signum, _frame) -> None:
@@ -57,20 +59,31 @@ def main() -> int:
     source = args.video if args.video is not None else cfg.camera_index
     if isinstance(source, str) and source.isdigit():
         source = int(source)
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        backend.stop()
-        raise RuntimeError(f"unable to open video source: {source}")
+    cap = None
+    vision_available = not args.no_vision
+    if vision_available:
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            backend.stop()
+            print(f"[warn] unable to open video source: {source}; continuing in control-only mode")
+            vision_available = False
 
     frame_period = 1.0 / cfg.loop_hz
     try:
         while not stopping:
             start = time.monotonic()
-            ok, frame = cap.read()
-            if not ok:
-                break
-            vision = tracker.process(frame)
-            pad = gamepad.poll() if gamepad else None
+            vision = None
+            if vision_available and cap is not None:
+                ok, frame = cap.read()
+                if ok:
+                    vision = tracker.process(frame)
+                else:
+                    print("[warn] camera read failed; switching to control-only mode")
+                    cap.release()
+                    cap = None
+                    vision_available = False
+            web_pad = web_control.poll() if web_control else None
+            pad = web_pad if web_pad and web_pad.connected else (gamepad.poll() if gamepad else None)
             if pad and pad.emergency_stop:
                 state.set_mode(Mode.STOP)
                 backend.stop()
@@ -83,7 +96,7 @@ def main() -> int:
                 continue
             if pad and pad.selected_mode:
                 state.set_mode(pad.selected_mode)
-            else:
+            elif vision is not None:
                 decision = state.decide(vision)
                 if decision.action == "stop":
                     backend.stop()
@@ -91,6 +104,8 @@ def main() -> int:
                     backend.send_action(decision.action)
                 elif decision.motion:
                     backend.send_motion(decision.motion)
+            elif state.mode != Mode.STOP:
+                backend.stop()
 
             elapsed = time.monotonic() - start
             if elapsed < frame_period:
@@ -100,7 +115,8 @@ def main() -> int:
             backend.stop()
         finally:
             backend.close()
-            cap.release()
+            if cap is not None:
+                cap.release()
     return 0
 
 

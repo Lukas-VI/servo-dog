@@ -1,7 +1,7 @@
 const defaultConfig = {
   camera_index: 0,
-  frame_width: 320,
-  frame_height: 240,
+  frame_width: 240,
+  frame_height: 180,
   loop_hz: 14.0,
   serial_port: "/dev/serial0",
   serial_baud: 9600,
@@ -746,6 +746,29 @@ async function saveConfig() {
   renderYaml();
 }
 
+async function sendRuntimeCommand(command) {
+  const height = Number(config.stand_height || defaultConfig.stand_height);
+  const body = {
+    manual_enabled: false,
+    emergency_stop: false,
+    selected_mode: "",
+    selected_action: "",
+    motion: { forward: 0, side: 0, yaw: 0, roll: 0, pitch: 0, stand_height: height, gait: Number(config.gamepad?.gait || 2) },
+    ...command,
+  };
+  try {
+    const response = await fetch("/api/gamepad", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(response.statusText);
+    $("saveState").textContent = `运行命令已发送：${body.selected_mode || body.selected_action || (body.emergency_stop ? "stop" : "init")}`;
+  } catch {
+    $("saveState").textContent = "运行命令发送失败";
+  }
+}
+
 function bindEvents() {
   $("activeColor").addEventListener("change", (event) => {
     activeColor = event.target.value;
@@ -764,6 +787,12 @@ function bindEvents() {
   $("slamRunBtn").addEventListener("click", startSlam);
   $("slamStepBtn").addEventListener("click", stepSlam);
   $("slamResetBtn").addEventListener("click", resetSlam);
+  $("runtimeInitBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "stop" }));
+  $("runtimeStartBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "track" }));
+  $("runtimeStopBtn").addEventListener("click", () => sendRuntimeCommand({ emergency_stop: true, selected_mode: "stop" }));
+  $("runtimeLeftBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "byroad_a" }));
+  $("runtimeStraightBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "track" }));
+  $("runtimeRightBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "byroad_b" }));
   document.body.addEventListener("input", handleInput);
   document.body.addEventListener("click", handleClick);
 }

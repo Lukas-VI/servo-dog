@@ -59,8 +59,8 @@ class GamepadConfig:
 @dataclass
 class RuntimeConfig:
     camera_index: int = 0
-    frame_width: int = 320
-    frame_height: int = 240
+    frame_width: int = 240
+    frame_height: int = 180
     loop_hz: float = 14.0
     serial_port: str = "/dev/serial0"
     serial_baud: int = 9600
