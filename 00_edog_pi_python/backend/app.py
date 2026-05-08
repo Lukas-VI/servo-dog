@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import load_config
 from .control.backends import make_backend
-from .input.gamepad import GamepadReader
+from .input.gamepad import GamepadReader, mapping_from_config
 from .models import Mode
 from .state import EdogStateMachine
 from .vision.pure_vision import PureVisionTracker, VisionDebug
@@ -44,7 +44,7 @@ def main() -> int:
         ),
     )
     state = EdogStateMachine(cfg, Mode(args.mode))
-    gamepad = None if args.no_gamepad else GamepadReader()
+    gamepad = None if args.no_gamepad else GamepadReader(mapping_from_config(cfg.gamepad), cfg.stand_height)
     stopping = False
 
     def request_stop(_signum, _frame) -> None:
@@ -71,12 +71,18 @@ def main() -> int:
                 break
             vision = tracker.process(frame)
             pad = gamepad.poll() if gamepad else None
+            if pad and pad.emergency_stop:
+                state.set_mode(Mode.STOP)
+                backend.stop()
+                continue
+            if pad and pad.manual_enabled:
+                backend.send_motion(pad.motion)
+                continue
+            if pad and pad.selected_action:
+                backend.send_action(pad.selected_action)
+                continue
             if pad and pad.selected_mode:
                 state.set_mode(pad.selected_mode)
-            if pad and pad.emergency_stop:
-                backend.stop()
-            elif pad and pad.manual_enabled:
-                backend.send_motion(pad.motion)
             else:
                 decision = state.decide(vision)
                 if decision.action == "stop":
@@ -100,4 +106,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

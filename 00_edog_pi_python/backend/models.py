@@ -24,6 +24,7 @@ class MotionCommand:
     roll: float = 0.0
     pitch: float = 0.0
     stand_height: int = 144
+    gait: int = 2
 
 
 @dataclass
@@ -44,6 +45,7 @@ class GamepadCommand:
     manual_enabled: bool = False
     motion: MotionCommand = field(default_factory=MotionCommand)
     selected_mode: Optional[Mode] = None
+    selected_action: Optional[str] = None
 
 
 @dataclass

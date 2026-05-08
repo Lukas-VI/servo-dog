@@ -45,6 +45,11 @@ python -m backend.app --dry-run --video path/to/test.mp4 --mode track --debug-di
 
 - Startup defaults to `stop`.
 - `--dry-run` never writes to serial or LCM.
+- Hardware helper `run_serial.sh` keeps pygame gamepad support enabled.
+- Gamepad priority is emergency stop, manual hold-to-drive, mode selection, then autonomous vision.
 - Abnormal shutdown attempts to send stop when a real backend is active.
 - The loop target is 14 Hz, matching the old receive-rate comment.
 
+See `docs/operator_quickstart.md` for competition operation, systemd services,
+browser tuning, and Xbox controller mapping. See
+`docs/gamepad_value_ranges.md` for the explicit config value ranges.

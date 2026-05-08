@@ -112,9 +112,16 @@ cat > {args.remote_root}/current/run_serial.sh <<'EOF'
 set -eu
 cd /home/pi/edog_pi_python/current
 export PYTHONPATH="/usr/local/lib/python3.7/site-packages/cv2/python-3.7:/home/pi/opencv/release/lib/python3:${{PYTHONPATH:-}}"
-python3 -m backend.app --backend serial --no-gamepad "$@"
+python3 -m backend.app --backend serial "$@"
 EOF
-chmod +x {args.remote_root}/current/run_dry.sh {args.remote_root}/current/run_serial.sh
+cat > {args.remote_root}/current/run_debug_server.sh <<'EOF'
+#!/bin/sh
+set -eu
+cd /home/pi/edog_pi_python/current
+export PYTHONPATH="/usr/local/lib/python3.7/site-packages/cv2/python-3.7:/home/pi/opencv/release/lib/python3:${{PYTHONPATH:-}}"
+python3 -m backend.debug_server --host 0.0.0.0 --port 8080 --camera-source 0 --camera-width 320 --camera-height 240 "$@"
+EOF
+chmod +x {args.remote_root}/current/run_dry.sh {args.remote_root}/current/run_serial.sh {args.remote_root}/current/run_debug_server.sh
 """
     print(run(client, setup, args.password))
 

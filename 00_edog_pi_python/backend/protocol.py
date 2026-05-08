@@ -73,6 +73,7 @@ def pack_named_action(name: str) -> bytes:
 
 
 def pack_motion(command: MotionCommand, gait: int = GAIT_TROT) -> bytes:
+    gait = int(getattr(command, "gait", gait))
     stand_height = int(command.stand_height) & 0xFF
     data = bytearray()
     data.extend([CMD_MOTION_SIMPLE, 0x16, gait & 0xFF])

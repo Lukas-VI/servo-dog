@@ -66,6 +66,34 @@ The old Qt `socketServer` listened for UDP JPEG frames on `30015` to `30018`
 and sent threshold bytes to robot port `8000`. The new path replaces that with
 one HTTP service to reduce firewall, address, and multi-port debugging pain.
 
+## Systemd Services
+
+After deployment, install service files from Windows:
+
+```powershell
+python .\00_edog_pi_python\scripts\install_systemd_services.py --host 192.168.12.1 --user pi --password 123456
+```
+
+This enables `edog-debug.service` at boot so the browser console is available at
+`http://192.168.12.1:8080`.
+
+`edog-runner.service` is installed but disabled by default. Start it manually
+after the robot is on the course:
+
+```bash
+sudo systemctl start edog-runner.service
+sudo systemctl stop edog-runner.service
+```
+
+Enable serial control at boot only after bench testing:
+
+```bash
+sudo systemctl enable edog-runner.service
+```
+
+The hardware run path keeps pygame gamepad support enabled. Emergency stop and
+manual override are evaluated before autonomous vision decisions.
+
 ## Stable Wired And Wireless
 
 - Wired debug: `eth0 = 192.168.12.1/24`.

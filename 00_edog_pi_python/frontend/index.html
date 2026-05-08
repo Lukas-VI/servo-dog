@@ -63,6 +63,7 @@
         <nav class="tabs" aria-label="debug sections">
           <button class="tab active" data-tab="colors">阈值</button>
           <button class="tab" data-tab="steering">转向</button>
+          <button class="tab" data-tab="gamepad">手柄</button>
           <button class="tab" data-tab="tasks">任务图</button>
           <button class="tab" data-tab="slam">SLAM</button>
         </nav>
@@ -80,6 +81,10 @@
               <span>yaw <strong id="yawOut">0.000</strong></span>
             </div>
           </div>
+        </section>
+
+        <section id="gamepadTab" class="tab-panel">
+          <div class="control-grid" id="gamepadEditor"></div>
         </section>
 
         <section id="tasksTab" class="tab-panel">

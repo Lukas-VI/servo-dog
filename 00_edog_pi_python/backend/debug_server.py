@@ -33,6 +33,27 @@ DEFAULT_BRANCH = {
     "fork_confidence": 0.18,
     "turn_bias": 0.28,
 }
+DEFAULT_GAMEPAD = {
+    "axis_forward": 1,
+    "axis_side": 0,
+    "axis_roll": 2,
+    "axis_pitch": 3,
+    "axis_left_trigger": 4,
+    "axis_right_trigger": 5,
+    "button_emergency_stop": 1,
+    "button_manual": 4,
+    "max_forward": 0.35,
+    "max_side": 0.25,
+    "max_roll": 0.25,
+    "max_pitch": 0.25,
+    "min_height": 100,
+    "max_height": 180,
+    "height_step": 1.8,
+    "deadzone": 0.10,
+    "gait": 2,
+    "mode_buttons": {"0": "track", "2": "stop"},
+    "action_buttons": {"3": "updais", "5": "lean_left", "6": "lean_right"},
+}
 
 
 @dataclass
@@ -146,6 +167,7 @@ def _read_known_yaml(path: Path) -> Dict[str, Any]:
     data: Dict[str, Any] = {
         "pid": {},
         "branch": dict(DEFAULT_BRANCH),
+        "gamepad": dict(DEFAULT_GAMEPAD),
         "colors_hsv": {},
         "task_graph": {"nodes": [], "edges": []},
         "slam_demo": dict(DEFAULT_SLAM_DEMO),
@@ -157,6 +179,7 @@ def _read_known_yaml(path: Path) -> Dict[str, Any]:
     color: Optional[str] = None
     graph_list: Optional[str] = None
     graph_item: Optional[Dict[str, Any]] = None
+    gamepad_map: Optional[str] = None
     for raw in lines:
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
@@ -165,17 +188,32 @@ def _read_known_yaml(path: Path) -> Dict[str, Any]:
         if indent == 0 and line.endswith(":"):
             section = line[:-1]
             color = None
+            graph_list = None
+            graph_item = None
+            gamepad_map = None
         elif indent == 0 and ":" in line:
             key, value = line.split(":", 1)
             data[key] = _parse_scalar(value)
             section = None
             color = None
+            graph_list = None
+            graph_item = None
+            gamepad_map = None
         elif section == "pid" and indent == 2 and ":" in line:
             key, value = line.split(":", 1)
             data["pid"][key] = _parse_scalar(value)
         elif section == "branch" and indent == 2 and ":" in line:
             key, value = line.split(":", 1)
             data["branch"][key.strip()] = _parse_scalar(value)
+        elif section == "gamepad" and indent == 2 and line.endswith(":"):
+            gamepad_map = line[:-1].strip()
+            data["gamepad"].setdefault(gamepad_map, {})
+        elif section == "gamepad" and indent == 2 and ":" in line:
+            key, value = line.split(":", 1)
+            data["gamepad"][key.strip()] = _parse_scalar(value)
+        elif section == "gamepad" and gamepad_map and indent == 4 and ":" in line:
+            key, value = line.split(":", 1)
+            data["gamepad"][gamepad_map][str(_parse_scalar(key))] = str(_parse_scalar(value))
         elif section == "slam_demo" and indent == 2 and ":" in line:
             key, value = line.split(":", 1)
             data["slam_demo"][key.strip()] = _parse_scalar(value)
@@ -206,6 +244,7 @@ def read_config(path: Path) -> Dict[str, Any]:
         loaded = _read_known_yaml(path)
     loaded.setdefault("pid", {})
     loaded.setdefault("branch", dict(DEFAULT_BRANCH))
+    loaded.setdefault("gamepad", dict(DEFAULT_GAMEPAD))
     loaded.setdefault("colors_hsv", {})
     loaded.setdefault("task_graph", {"nodes": [], "edges": []})
     loaded.setdefault("slam_demo", dict(DEFAULT_SLAM_DEMO))
@@ -215,6 +254,8 @@ def read_config(path: Path) -> Dict[str, Any]:
         loaded["slam_demo"].setdefault(key, value)
     for key, value in DEFAULT_BRANCH.items():
         loaded["branch"].setdefault(key, value)
+    for key, value in DEFAULT_GAMEPAD.items():
+        loaded["gamepad"].setdefault(key, value)
     return loaded
 
 
@@ -242,6 +283,15 @@ def dump_config(data: Dict[str, Any]) -> str:
     branch = data.get("branch") or DEFAULT_BRANCH
     for key, value in branch.items():
         lines.append(f"  {key}: {_yaml_value(value)}")
+    lines.append("gamepad:")
+    gamepad = data.get("gamepad") or DEFAULT_GAMEPAD
+    for key, value in gamepad.items():
+        if isinstance(value, dict):
+            lines.append(f"  {key}:")
+            for map_key, map_value in value.items():
+                lines.append(f"    {_yaml_value(map_key)}: {_yaml_value(map_value)}")
+        else:
+            lines.append(f"  {key}: {_yaml_value(value)}")
     lines.append("colors_hsv:")
     for name, spec in (data.get("colors_hsv") or {}).items():
         lines.append(f"  {name}:")

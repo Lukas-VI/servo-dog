@@ -20,6 +20,27 @@ const defaultConfig = {
     fork_confidence: 0.18,
     turn_bias: 0.28,
   },
+  gamepad: {
+    axis_forward: 1,
+    axis_side: 0,
+    axis_roll: 2,
+    axis_pitch: 3,
+    axis_left_trigger: 4,
+    axis_right_trigger: 5,
+    button_emergency_stop: 1,
+    button_manual: 4,
+    max_forward: 0.35,
+    max_side: 0.25,
+    max_roll: 0.25,
+    max_pitch: 0.25,
+    min_height: 100,
+    max_height: 180,
+    height_step: 1.8,
+    deadzone: 0.10,
+    gait: 2,
+    mode_buttons: { 0: "track", 2: "stop" },
+    action_buttons: { 3: "updais", 5: "lean_left", 6: "lean_right" },
+  },
   colors_hsv: {
     blue: { min: [95, 70, 40], max: [130, 255, 255] },
     green: { min: [40, 60, 40], max: [85, 255, 255] },
@@ -70,6 +91,25 @@ const slamMeta = {
 const branchMeta = {
   fork_confidence: ["岔路置信度", 0.05, 0.55, 0.01],
   turn_bias: ["岔路转向偏置", 0, 0.8, 0.01],
+};
+const gamepadMeta = {
+  axis_forward: ["左摇杆前后轴", 0, 15, 1],
+  axis_side: ["左摇杆左右轴", 0, 15, 1],
+  axis_roll: ["右摇杆滚转轴", 0, 15, 1],
+  axis_pitch: ["右摇杆俯仰轴", 0, 15, 1],
+  axis_left_trigger: ["左扳机轴", 0, 15, 1],
+  axis_right_trigger: ["右扳机轴", 0, 15, 1],
+  button_emergency_stop: ["急停按钮", 0, 31, 1],
+  button_manual: ["手动保持按钮", 0, 31, 1],
+  max_forward: ["最大前后速度", 0, 0.8, 0.01],
+  max_side: ["最大左右速度", 0, 0.8, 0.01],
+  max_roll: ["最大滚转", 0, 0.8, 0.01],
+  max_pitch: ["最大俯仰", 0, 0.8, 0.01],
+  min_height: ["最低高度", 60, 180, 1],
+  max_height: ["最高高度", 100, 220, 1],
+  height_step: ["高度步进", 0.2, 8, 0.1],
+  deadzone: ["摇杆死区", 0, 0.35, 0.01],
+  gait: ["步态编号", 0, 15, 1],
 };
 
 let config = structuredCloneSafe(defaultConfig);
@@ -128,11 +168,47 @@ function renderAll() {
   renderPidEditor();
   renderTaskGraph();
   renderTaskEditor();
+  renderGamepadEditor();
   renderYaml();
   renderMask();
   renderSteering();
   renderSlamEditor();
   renderSlam();
+}
+
+function renderGamepadEditor() {
+  const root = $("gamepadEditor");
+  if (!root) return;
+  const rows = Object.entries(gamepadMeta).map(([key, [label, min, max, step]]) => {
+    const value = config.gamepad?.[key] ?? defaultConfig.gamepad[key];
+    return `
+      <label class="param-row">
+        <span>${label}</span>
+        <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-gamepad="${key}" />
+        <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-gamepad="${key}" />
+      </label>`;
+  });
+  root.innerHTML = rows.join("") + `
+    <div class="mapping-block">
+      <h3>模式键位</h3>
+      ${renderButtonMap("mode_buttons", ["stop", "track", "byroad_a", "byroad_b", "manual"])}
+    </div>
+    <div class="mapping-block">
+      <h3>动作键位</h3>
+      ${renderButtonMap("action_buttons", ["updais", "lean_left", "lean_right", "upstair", "downstair", "leg_left", "leg_right"])}
+    </div>`;
+}
+
+function renderButtonMap(group, options) {
+  const entries = Object.entries(config.gamepad[group] || {});
+  return entries.map(([button, value]) => `
+    <label class="mapping-row">
+      <input type="number" min="0" max="31" step="1" value="${button}" data-gamepad-map-button="${group}" data-old-button="${button}" />
+      <select data-gamepad-map-value="${group}" data-button="${button}">
+        ${options.map((option) => `<option value="${option}" ${value === option ? "selected" : ""}>${option}</option>`).join("")}
+      </select>
+      <button data-delete-gamepad-map="${group}" data-button="${button}" class="danger">删除</button>
+    </label>`).join("") + `<button data-add-gamepad-map="${group}">新增键位</button>`;
 }
 
 function renderColorSelector() {
@@ -537,6 +613,15 @@ function toYaml(data) {
   Object.entries(data.pid).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   lines.push("branch:");
   Object.entries(data.branch || defaultConfig.branch).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
+  lines.push("gamepad:");
+  Object.entries(data.gamepad || defaultConfig.gamepad).forEach(([key, value]) => {
+    if (typeof value === "object" && value !== null) {
+      lines.push(`  ${key}:`);
+      Object.entries(value).forEach(([button, action]) => lines.push(`    ${button}: ${action}`));
+    } else {
+      lines.push(`  ${key}: ${value}`);
+    }
+  });
   lines.push("colors_hsv:");
   Object.entries(data.colors_hsv).forEach(([name, spec]) => {
     lines.push(`  ${name}:`);
@@ -574,6 +659,9 @@ async function loadConfig() {
     config = { ...structuredCloneSafe(defaultConfig), ...(await response.json()) };
     config.pid = { ...defaultConfig.pid, ...(config.pid || {}) };
     config.branch = { ...defaultConfig.branch, ...(config.branch || {}) };
+    config.gamepad = { ...structuredCloneSafe(defaultConfig.gamepad), ...(config.gamepad || {}) };
+    config.gamepad.mode_buttons = { ...defaultConfig.gamepad.mode_buttons, ...(config.gamepad.mode_buttons || {}) };
+    config.gamepad.action_buttons = { ...defaultConfig.gamepad.action_buttons, ...(config.gamepad.action_buttons || {}) };
     config.colors_hsv = { ...defaultConfig.colors_hsv, ...(config.colors_hsv || {}) };
     config.slam_demo = { ...defaultConfig.slam_demo, ...(config.slam_demo || {}) };
     config.task_graph = config.task_graph || structuredCloneSafe(defaultConfig.task_graph);
@@ -696,6 +784,27 @@ function handleInput(event) {
     renderSlam();
     renderYaml();
   }
+  if (target.dataset.gamepad) {
+    const key = target.dataset.gamepad;
+    const integerKeys = new Set(["axis_forward", "axis_side", "axis_roll", "axis_pitch", "axis_left_trigger", "axis_right_trigger", "button_emergency_stop", "button_manual", "min_height", "max_height", "gait"]);
+    config.gamepad[key] = integerKeys.has(key) ? Math.round(Number(target.value)) : Number(target.value);
+    renderGamepadEditor();
+    renderYaml();
+  }
+  if (target.dataset.gamepadMapButton) {
+    const group = target.dataset.gamepadMapButton;
+    const oldButton = target.dataset.oldButton;
+    const newButton = String(Math.round(clamp(target.value, 0, 31)));
+    const current = config.gamepad[group][oldButton];
+    delete config.gamepad[group][oldButton];
+    config.gamepad[group][newButton] = current;
+    renderGamepadEditor();
+    renderYaml();
+  }
+  if (target.dataset.gamepadMapValue) {
+    config.gamepad[target.dataset.gamepadMapValue][target.dataset.button] = target.value;
+    renderYaml();
+  }
   if (target.dataset.nodeField) {
     updateNode(target.dataset.nodeField, target.value);
   }
@@ -726,6 +835,8 @@ function handleClick(event) {
   if (event.target.id === "addEdgeBtn") addEdge();
   if (event.target.dataset.deleteNode) deleteNode(event.target.dataset.deleteNode);
   if (event.target.dataset.deleteEdge) deleteEdge(Number(event.target.dataset.deleteEdge));
+  if (event.target.dataset.addGamepadMap) addGamepadMap(event.target.dataset.addGamepadMap);
+  if (event.target.dataset.deleteGamepadMap) deleteGamepadMap(event.target.dataset.deleteGamepadMap, event.target.dataset.button);
 }
 
 function loadImage(event) {
@@ -789,6 +900,18 @@ function deleteNode(id) {
 function deleteEdge(index) {
   config.task_graph.edges.splice(index, 1);
   selectedEdgeIndex = Math.max(0, config.task_graph.edges.length - 1);
+  renderAll();
+}
+
+function addGamepadMap(group) {
+  let button = 0;
+  while (config.gamepad[group][String(button)] !== undefined && button < 32) button += 1;
+  config.gamepad[group][String(button)] = group === "mode_buttons" ? "track" : "updais";
+  renderAll();
+}
+
+function deleteGamepadMap(group, button) {
+  delete config.gamepad[group][button];
   renderAll();
 }
 
