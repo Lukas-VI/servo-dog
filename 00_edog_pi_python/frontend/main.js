@@ -6,6 +6,7 @@ const defaultConfig = {
   serial_port: "/dev/serial0",
   serial_baud: 9600,
   stand_height: 144,
+  runtime_status_path: "/tmp/edog_runtime_status.json",
   pid: {
     kp_side: 0.12,
     kd_side: 0.04,
@@ -25,12 +26,13 @@ const defaultConfig = {
     web_command_path: "/tmp/edog_web_gamepad.json",
     axis_forward: 1,
     axis_side: 0,
-    axis_roll: 2,
-    axis_pitch: 3,
-    axis_left_trigger: 4,
+    axis_roll: 3,
+    axis_pitch: 4,
+    axis_left_trigger: 2,
     axis_right_trigger: 5,
     button_emergency_stop: 1,
     button_manual: 4,
+    manual_button_required: false,
     max_forward: 0.35,
     max_side: 0.25,
     max_roll: 0.25,
@@ -103,6 +105,7 @@ const gamepadMeta = {
   axis_right_trigger: ["右扳机轴", 0, 15, 1],
   button_emergency_stop: ["急停按钮", 0, 31, 1],
   button_manual: ["手动保持按钮", 0, 31, 1],
+  manual_button_required: ["必须按手动键", 0, 1, 1],
   max_forward: ["最大前后速度", 0, 0.8, 0.01],
   max_side: ["最大左右速度", 0, 0.8, 0.01],
   max_roll: ["最大滚转", 0, 0.8, 0.01],
@@ -195,9 +198,9 @@ function renderGamepadEditor() {
     const value = config.gamepad?.[key] ?? defaultConfig.gamepad[key];
     return `
       <label class="param-row">
-        <span>${label}</span>
-        <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-gamepad="${key}" />
-        <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-gamepad="${key}" />
+      <span>${label}</span>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${Number(value)}" data-gamepad="${key}" />
+      <input type="number" min="${min}" max="${max}" step="${step}" value="${Number(value)}" data-gamepad="${key}" />
       </label>`;
   }));
   root.innerHTML = rows.join("") + `
@@ -620,7 +623,7 @@ function startSlam() {
 
 function toYaml(data) {
   const lines = [];
-  ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height"].forEach((key) => lines.push(`${key}: ${data[key]}`));
+  ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height", "runtime_status_path"].forEach((key) => lines.push(`${key}: ${data[key]}`));
   lines.push("pid:");
   Object.entries(data.pid).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   lines.push("branch:");
@@ -769,6 +772,22 @@ async function sendRuntimeCommand(command) {
   }
 }
 
+async function pollRuntimeStatus() {
+  try {
+    const response = await fetch("/api/runtime/status", { cache: "no-store" });
+    const status = await response.json();
+    $("runtimeMode").textContent = status.mode || "-";
+    $("runtimeSource").textContent = status.gamepad?.source || (status.gamepad?.connected ? "unknown" : "none");
+    $("runtimeWrites").textContent = String(status.write_count || 0);
+    $("runtimeFrame").textContent = status.last_frame_hex || "-";
+    $("runtimeRaw").textContent = JSON.stringify(status, null, 2);
+  } catch (error) {
+    $("runtimeRaw").textContent = `runtime 状态不可用: ${String(error)}`;
+  } finally {
+    window.setTimeout(pollRuntimeStatus, 250);
+  }
+}
+
 function bindEvents() {
   $("activeColor").addEventListener("change", (event) => {
     activeColor = event.target.value;
@@ -833,7 +852,11 @@ function handleInput(event) {
       return;
     }
     const integerKeys = new Set(["axis_forward", "axis_side", "axis_roll", "axis_pitch", "axis_left_trigger", "axis_right_trigger", "button_emergency_stop", "button_manual", "min_height", "max_height", "gait"]);
-    config.gamepad[key] = integerKeys.has(key) ? Math.round(Number(target.value)) : Number(target.value);
+    if (key === "manual_button_required") {
+      config.gamepad[key] = Number(target.value) >= 0.5;
+    } else {
+      config.gamepad[key] = integerKeys.has(key) ? Math.round(Number(target.value)) : Number(target.value);
+    }
     renderGamepadEditor();
     renderYaml();
   }
@@ -973,3 +996,4 @@ bindEvents();
 const saved = localStorage.getItem("edog-debug-config");
 if (saved) config = JSON.parse(saved);
 loadConfig();
+pollRuntimeStatus();

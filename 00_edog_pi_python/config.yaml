@@ -5,6 +5,7 @@ loop_hz: 14.0
 serial_port: /dev/serial0
 serial_baud: 9600
 stand_height: 144
+runtime_status_path: /tmp/edog_runtime_status.json
 pid:
   kp_side: 0.12
   kd_side: 0.04
@@ -22,12 +23,13 @@ gamepad:
   web_command_path: /tmp/edog_web_gamepad.json
   axis_forward: 1
   axis_side: 0
-  axis_roll: 2
-  axis_pitch: 3
-  axis_left_trigger: 4
+  axis_roll: 3
+  axis_pitch: 4
+  axis_left_trigger: 2
   axis_right_trigger: 5
   button_emergency_stop: 1
   button_manual: 4
+  manual_button_required: false
   max_forward: 0.35
   max_side: 0.25
   max_roll: 0.25

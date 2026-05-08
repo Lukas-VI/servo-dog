@@ -15,12 +15,13 @@ from ..models import GamepadCommand, Mode, MotionCommand
 class GamepadMapping:
     axis_forward: int = 1
     axis_side: int = 0
-    axis_roll: int = 2
-    axis_pitch: int = 3
-    axis_left_trigger: int = 4
+    axis_roll: int = 3
+    axis_pitch: int = 4
+    axis_left_trigger: int = 2
     axis_right_trigger: int = 5
     button_emergency_stop: int = 1
     button_manual: int = 4
+    manual_button_required: bool = False
     max_forward: float = 0.35
     max_side: float = 0.25
     max_roll: float = 0.25
@@ -46,6 +47,7 @@ def mapping_from_config(cfg: Optional[GamepadConfig]) -> GamepadMapping:
         axis_right_trigger=cfg.axis_right_trigger,
         button_emergency_stop=cfg.button_emergency_stop,
         button_manual=cfg.button_manual,
+        manual_button_required=cfg.manual_button_required,
         max_forward=cfg.max_forward,
         max_side=cfg.max_side,
         max_roll=cfg.max_roll,
@@ -92,11 +94,13 @@ class GamepadReader:
             self._available = False
             return GamepadCommand(connected=False)
         m = self.mapping
+        raw_axes = tuple(round(float(self._joystick.get_axis(index)), 4) for index in range(self._joystick.get_numaxes()))
         pressed = {index for index in range(self._joystick.get_numbuttons()) if self._button(index)}
+        hats = tuple(self._joystick.get_hat(index) for index in range(self._joystick.get_numhats()))
         rising = pressed - self._last_buttons
         self._last_buttons = pressed
         emergency = self._button(m.button_emergency_stop)
-        manual = self._button(m.button_manual)
+        manual_button = self._button(m.button_manual)
         selected_mode = None
         for button, mode in m.mode_buttons.items():
             if int(button) in rising:
@@ -119,13 +123,22 @@ class GamepadReader:
             stand_height=self._stand_height,
             gait=m.gait,
         )
+        motion_active = any(
+            abs(value) > 0.001
+            for value in (motion.forward, motion.side, motion.yaw, motion.roll, motion.pitch)
+        ) or abs(height_delta) > 0.001
+        manual = manual_button or (motion_active and not m.manual_button_required)
         return GamepadCommand(
             connected=True,
+            source="usb",
             emergency_stop=emergency,
             manual_enabled=manual,
             motion=motion,
             selected_mode=selected_mode,
             selected_action=selected_action,
+            raw_axes=raw_axes,
+            pressed_buttons=tuple(sorted(pressed)),
+            hats=hats,
         )
 
     def _axis(self, index: int) -> float:
@@ -139,7 +152,7 @@ class GamepadReader:
         value = self._axis(index)
         if value < -0.5:
             return 0.0
-        return max(0.0, min(1.0, (value + 1.0) * 0.5))
+        return max(0.0, min(1.0, value))
 
 
 class WebGamepadReader:
@@ -169,6 +182,7 @@ class WebGamepadReader:
             self._last_action_stamp = updated_at
         return GamepadCommand(
             connected=True,
+            source="web",
             emergency_stop=bool(data.get("emergency_stop", False)),
             manual_enabled=bool(data.get("manual_enabled", False)),
             selected_mode=mode,

@@ -37,12 +37,13 @@ class GamepadConfig:
     web_command_path: str = "/tmp/edog_web_gamepad.json"
     axis_forward: int = 1
     axis_side: int = 0
-    axis_roll: int = 2
-    axis_pitch: int = 3
-    axis_left_trigger: int = 4
+    axis_roll: int = 3
+    axis_pitch: int = 4
+    axis_left_trigger: int = 2
     axis_right_trigger: int = 5
     button_emergency_stop: int = 1
     button_manual: int = 4
+    manual_button_required: bool = False
     max_forward: float = 0.35
     max_side: float = 0.25
     max_roll: float = 0.25
@@ -65,6 +66,7 @@ class RuntimeConfig:
     serial_port: str = "/dev/serial0"
     serial_baud: int = 9600
     stand_height: int = 144
+    runtime_status_path: str = "/tmp/edog_runtime_status.json"
     debug: bool = False
     pid: PIDConfig = field(default_factory=PIDConfig)
     branch: BranchConfig = field(default_factory=BranchConfig)

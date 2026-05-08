@@ -35,10 +35,15 @@ class DryRunBackend:
 
     def __init__(self) -> None:
         self.frames: List[bytes] = []
+        self.last_frame_hex = ""
+        self.last_error = ""
+        self.write_count = 0
 
     def _record(self, frame: bytes) -> None:
         self.frames.append(frame)
-        print(f"[dry-run] {frame_hex(frame)}")
+        self.last_frame_hex = frame_hex(frame)
+        self.write_count += 1
+        print(f"[dry-run] {self.last_frame_hex}")
 
     def send_motion(self, command: MotionCommand) -> None:
         self._record(pack_motion(command))
@@ -68,10 +73,20 @@ class SerialBackend:
             timeout=0,
             write_timeout=0.2,
         )
+        self.last_frame_hex = ""
+        self.last_error = ""
+        self.write_count = 0
 
     def _write(self, frame: bytes) -> None:
-        self.serial.write(frame)
-        self.serial.flush()
+        try:
+            self.serial.write(frame)
+            self.serial.flush()
+            self.last_frame_hex = frame_hex(frame)
+            self.last_error = ""
+            self.write_count += 1
+        except Exception as exc:
+            self.last_error = repr(exc)
+            raise
 
     def send_motion(self, command: MotionCommand) -> None:
         self._write(pack_motion(command))

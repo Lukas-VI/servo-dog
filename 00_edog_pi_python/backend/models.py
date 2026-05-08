@@ -41,11 +41,15 @@ class VisionResult:
 @dataclass
 class GamepadCommand:
     connected: bool = False
+    source: str = ""
     emergency_stop: bool = False
     manual_enabled: bool = False
     motion: MotionCommand = field(default_factory=MotionCommand)
     selected_mode: Optional[Mode] = None
     selected_action: Optional[str] = None
+    raw_axes: Tuple[float, ...] = ()
+    pressed_buttons: Tuple[int, ...] = ()
+    hats: Tuple[Tuple[int, int], ...] = ()
 
 
 @dataclass

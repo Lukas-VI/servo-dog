@@ -84,6 +84,21 @@
         </section>
 
         <section id="gamepadTab" class="tab-panel">
+          <div class="runtime-feedback">
+            <h3>实时反馈</h3>
+            <div class="feedback-grid">
+              <div><span>模式</span><strong id="runtimeMode">-</strong></div>
+              <div><span>来源</span><strong id="runtimeSource">-</strong></div>
+              <div><span>写入次数</span><strong id="runtimeWrites">0</strong></div>
+              <div><span>最后帧</span><strong id="runtimeFrame">-</strong></div>
+            </div>
+            <pre id="runtimeRaw">等待运行时反馈</pre>
+          </div>
+          <div class="mapping-block">
+            <h3>Xbox 360 pygame 常见索引</h3>
+            <p class="hint">按钮：0=A，1=B，2=X，3=Y，4=LB，5=RB，6=Back，7=Start，8=Guide，9=L3，10=R3。</p>
+            <p class="hint">轴：0=左摇杆左右，1=左摇杆上下，3=右摇杆左右，4=右摇杆上下，2=LT，5=RT。以实时反馈里的 raw_axes 为准。</p>
+          </div>
           <div class="control-grid" id="gamepadEditor"></div>
         </section>
 

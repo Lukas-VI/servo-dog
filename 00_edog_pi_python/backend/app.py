@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from .config import load_config
@@ -47,7 +49,36 @@ def main() -> int:
     state = EdogStateMachine(cfg, Mode(args.mode))
     gamepad = None if args.no_gamepad else make_gamepad_reader(cfg.gamepad, cfg.stand_height)
     web_control = None if args.no_gamepad else WebGamepadReader(cfg.gamepad.web_command_path)
+    status_path = Path(cfg.runtime_status_path)
     stopping = False
+
+    def pad_status(pad) -> dict:
+        if not pad:
+            return {"connected": False}
+        data = asdict(pad)
+        if pad.selected_mode:
+            data["selected_mode"] = pad.selected_mode.value
+        return data
+
+    def write_status(reason: str, pad=None, last_decision: str = "") -> None:
+        payload = {
+            "ok": True,
+            "updated_at": time.time(),
+            "mode": state.mode.value,
+            "backend": getattr(backend, "name", backend_kind),
+            "reason": reason,
+            "decision": last_decision,
+            "gamepad": pad_status(pad),
+            "last_frame_hex": getattr(backend, "last_frame_hex", ""),
+            "last_serial_error": getattr(backend, "last_error", ""),
+            "write_count": getattr(backend, "write_count", 0),
+            "vision_available": vision_available,
+        }
+        try:
+            status_path.parent.mkdir(parents=True, exist_ok=True)
+            status_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
     def request_stop(_signum, _frame) -> None:
         nonlocal stopping
@@ -84,28 +115,38 @@ def main() -> int:
                     vision_available = False
             web_pad = web_control.poll() if web_control else None
             pad = web_pad if web_pad and web_pad.connected else (gamepad.poll() if gamepad else None)
+            reason = "idle"
             if pad and pad.emergency_stop:
                 state.set_mode(Mode.STOP)
                 backend.stop()
+                write_status("emergency_stop", pad, "stop")
                 continue
             if pad and pad.manual_enabled:
                 backend.send_motion(pad.motion)
+                write_status("manual_motion", pad, "motion")
                 continue
             if pad and pad.selected_action:
                 backend.send_action(pad.selected_action)
+                write_status("selected_action", pad, pad.selected_action)
                 continue
             if pad and pad.selected_mode:
                 state.set_mode(pad.selected_mode)
+                reason = "selected_mode"
             elif vision is not None:
                 decision = state.decide(vision)
                 if decision.action == "stop":
                     backend.stop()
+                    reason = "vision_stop"
                 elif decision.action:
                     backend.send_action(decision.action)
+                    reason = f"vision_action:{decision.action}"
                 elif decision.motion:
                     backend.send_motion(decision.motion)
+                    reason = "vision_motion"
             elif state.mode != Mode.STOP:
                 backend.stop()
+                reason = "control_only_no_vision_stop"
+            write_status(reason, pad)
 
             elapsed = time.monotonic() - start
             if elapsed < frame_period:

@@ -38,12 +38,13 @@ DEFAULT_GAMEPAD = {
     "web_command_path": "/tmp/edog_web_gamepad.json",
     "axis_forward": 1,
     "axis_side": 0,
-    "axis_roll": 2,
-    "axis_pitch": 3,
-    "axis_left_trigger": 4,
+    "axis_roll": 3,
+    "axis_pitch": 4,
+    "axis_left_trigger": 2,
     "axis_right_trigger": 5,
     "button_emergency_stop": 1,
     "button_manual": 4,
+    "manual_button_required": False,
     "max_forward": 0.35,
     "max_side": 0.25,
     "max_roll": 0.25,
@@ -56,6 +57,7 @@ DEFAULT_GAMEPAD = {
     "mode_buttons": {"0": "track", "2": "stop"},
     "action_buttons": {"3": "updais", "5": "lean_left", "6": "lean_right"},
 }
+DEFAULT_RUNTIME_STATUS = "/tmp/edog_runtime_status.json"
 
 
 @dataclass
@@ -275,7 +277,7 @@ def dump_config(data: Dict[str, Any]) -> str:
     if yaml is not None:
         return yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
     lines = []
-    for key in ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height"]:
+    for key in ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height", "runtime_status_path"]:
         if key in data:
             lines.append(f"{key}: {_yaml_value(data[key])}")
     lines.append("pid:")
@@ -346,6 +348,9 @@ class DebugHandler(SimpleHTTPRequestHandler):
         if path == "/api/gamepad":
             self._send_gamepad()
             return
+        if path == "/api/runtime/status":
+            self._send_runtime_status()
+            return
         if path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
             self.end_headers()
@@ -373,6 +378,20 @@ class DebugHandler(SimpleHTTPRequestHandler):
         config = read_config(self.config_path)
         gamepad = config.get("gamepad") or {}
         return Path(str(gamepad.get("web_command_path", DEFAULT_GAMEPAD["web_command_path"])))
+
+    def _runtime_status_path(self) -> Path:
+        config = read_config(self.config_path)
+        return Path(str(config.get("runtime_status_path", DEFAULT_RUNTIME_STATUS)))
+
+    def _send_runtime_status(self) -> None:
+        path = self._runtime_status_path()
+        if not path.exists():
+            self._send_json({"ok": False, "message": "runtime status not found", "path": str(path)})
+            return
+        try:
+            self._send_json(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
     def _send_gamepad(self) -> None:
         path = self._gamepad_command_path()
