@@ -13,6 +13,10 @@ pid:
   forward_speed: 0.18
   max_side: 0.22
   max_yaw: 0.90
+branch:
+  default_turn: straight
+  fork_confidence: 0.18
+  turn_bias: 0.28
 colors_hsv:
   blue:
     min: [95, 70, 40]

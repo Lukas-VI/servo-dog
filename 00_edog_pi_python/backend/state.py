@@ -68,6 +68,11 @@ class EdogStateMachine:
         if vision.confidence < 0.2:
             side = 0.0
             yaw = 0.0
+        elif vision.branch_confidence >= self.cfg.branch.fork_confidence:
+            if self.mode == Mode.BYROAD_A and "left" in vision.branches:
+                yaw += self.cfg.branch.turn_bias
+            elif self.mode == Mode.BYROAD_B and "right" in vision.branches:
+                yaw -= self.cfg.branch.turn_bias
 
         return MotionCommand(
             forward=self.cfg.pid.forward_speed if vision.confidence >= 0.2 else 0.03,

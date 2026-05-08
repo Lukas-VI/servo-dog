@@ -31,6 +31,8 @@ class VisionResult:
     line_error: float = 0.0
     line_angle: float = 0.0
     confidence: float = 0.0
+    branches: Tuple[str, ...] = ()
+    branch_confidence: float = 0.0
     detected_colors: Optional[Dict[str, float]] = None
     debug_frame: object = None
 

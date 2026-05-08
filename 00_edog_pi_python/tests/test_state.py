@@ -23,3 +23,12 @@ def test_color_triggers_action():
     assert decision.action == "updais"
     assert decision.mode == Mode.UP_DAIS
 
+
+def test_byroad_a_biases_toward_left_branch():
+    sm = EdogStateMachine(RuntimeConfig(), Mode.BYROAD_A)
+    straight = sm.decide(VisionResult(confidence=0.9, branches=("straight",), branch_confidence=0.9, detected_colors={}))
+    sm = EdogStateMachine(RuntimeConfig(), Mode.BYROAD_A)
+    left = sm.decide(VisionResult(confidence=0.9, branches=("left", "straight"), branch_confidence=0.9, detected_colors={}))
+    assert straight.motion is not None
+    assert left.motion is not None
+    assert left.motion.yaw > straight.motion.yaw

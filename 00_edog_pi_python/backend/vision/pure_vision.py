@@ -52,13 +52,16 @@ class PureVisionTracker:
         )
 
         error, angle, confidence = self._line_model(lines, edges.shape)
+        branches, branch_confidence = self._branch_model(adaptive)
         detected_colors = self._detect_colors(resized)
-        debug_frame = self._draw_debug(resized, roi, lines, error, confidence)
+        debug_frame = self._draw_debug(resized, roi, lines, error, confidence, branches, branch_confidence)
         self._maybe_write_debug(debug_frame)
         return VisionResult(
             line_error=error,
             line_angle=angle,
             confidence=confidence,
+            branches=branches,
+            branch_confidence=branch_confidence,
             detected_colors=detected_colors,
             debug_frame=debug_frame,
         )
@@ -91,6 +94,24 @@ class PureVisionTracker:
         confidence = max(0.0, min(1.0, total_weight / (width * height * 0.18)))
         return error, angle, confidence
 
+    def _branch_model(self, mask) -> Tuple[Tuple[str, ...], float]:
+        height, width = mask.shape[:2]
+        far = mask[: max(1, int(height * 0.52)), :]
+        labels = ("left", "straight", "right")
+        scores = []
+        for index in range(3):
+            x1 = int(width * index / 3)
+            x2 = int(width * (index + 1) / 3)
+            zone = far[:, x1:x2]
+            scores.append(float(np.count_nonzero(zone)) / max(float(zone.size), 1.0))
+
+        threshold = max(0.025, float(self.cfg.branch.fork_confidence) * 0.18)
+        branches = tuple(label for label, score in zip(labels, scores) if score >= threshold)
+        if not branches and max(scores) > 0:
+            branches = (labels[int(np.argmax(scores))],)
+        confidence = max(0.0, min(1.0, max(scores) / max(threshold * 3.0, 0.001)))
+        return branches, confidence
+
     def _detect_colors(self, frame) -> Dict[str, float]:
         import cv2
 
@@ -104,7 +125,16 @@ class PureVisionTracker:
             scores[name] = float(cv2.countNonZero(mask)) / pixels
         return scores
 
-    def _draw_debug(self, resized, roi, lines, error: float, confidence: float):
+    def _draw_debug(
+        self,
+        resized,
+        roi,
+        lines,
+        error: float,
+        confidence: float,
+        branches: Tuple[str, ...],
+        branch_confidence: float,
+    ):
         import cv2
 
         debug = resized.copy()
@@ -126,6 +156,17 @@ class PureVisionTracker:
             1,
             cv2.LINE_AA,
         )
+        if branches:
+            cv2.putText(
+                debug,
+                f"fork={','.join(branches)} {branch_confidence:.2f}",
+                (8, 44),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (80, 240, 170),
+                1,
+                cv2.LINE_AA,
+            )
         return debug
 
     def _maybe_write_debug(self, frame) -> None:

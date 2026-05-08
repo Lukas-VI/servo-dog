@@ -25,6 +25,13 @@ class PIDConfig:
 
 
 @dataclass
+class BranchConfig:
+    default_turn: str = "straight"
+    fork_confidence: float = 0.18
+    turn_bias: float = 0.28
+
+
+@dataclass
 class RuntimeConfig:
     camera_index: int = 0
     frame_width: int = 320
@@ -35,6 +42,7 @@ class RuntimeConfig:
     stand_height: int = 144
     debug: bool = False
     pid: PIDConfig = field(default_factory=PIDConfig)
+    branch: BranchConfig = field(default_factory=BranchConfig)
     colors_hsv: Dict[str, ColorRange] = field(default_factory=dict)
 
 
@@ -58,6 +66,9 @@ def load_config(path: Optional[str]) -> RuntimeConfig:
         if key == "pid":
             for pid_key, pid_value in value.items():
                 setattr(cfg.pid, pid_key, pid_value)
+        elif key == "branch":
+            for branch_key, branch_value in value.items():
+                setattr(cfg.branch, branch_key, branch_value)
         elif key == "colors_hsv":
             cfg.colors_hsv = {
                 name: (tuple(v["min"]), tuple(v["max"]))

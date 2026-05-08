@@ -15,6 +15,11 @@ const defaultConfig = {
     max_side: 0.22,
     max_yaw: 0.9,
   },
+  branch: {
+    default_turn: "straight",
+    fork_confidence: 0.18,
+    turn_bias: 0.28,
+  },
   colors_hsv: {
     blue: { min: [95, 70, 40], max: [130, 255, 255] },
     green: { min: [40, 60, 40], max: [85, 255, 255] },
@@ -61,6 +66,10 @@ const slamMeta = {
   map_decay: ["地图衰减", 0.82, 0.99, 0.01],
   motion_scale: ["运动尺度", 0.2, 2.4, 0.05],
   loop_threshold: ["闭环阈值", 0.1, 0.9, 0.01],
+};
+const branchMeta = {
+  fork_confidence: ["岔路置信度", 0.05, 0.55, 0.01],
+  turn_bias: ["岔路转向偏置", 0, 0.8, 0.01],
 };
 
 let config = structuredCloneSafe(defaultConfig);
@@ -181,7 +190,22 @@ function renderSlamEditor() {
         <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-slam="${key}" />
         <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-slam="${key}" />
       </label>`;
-  }).join("");
+  }).join("") + `
+    <label class="param-row">
+      <span>默认岔路</span>
+      <select data-branch="default_turn">
+        ${["straight", "left", "right"].map((value) => `<option value="${value}" ${config.branch?.default_turn === value ? "selected" : ""}>${value}</option>`).join("")}
+      </select>
+    </label>
+    ${Object.entries(branchMeta).map(([key, [label, min, max, step]]) => {
+      const value = config.branch?.[key] ?? defaultConfig.branch[key];
+      return `
+        <label class="param-row">
+          <span>${label}</span>
+          <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-branch="${key}" />
+          <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-branch="${key}" />
+        </label>`;
+    }).join("")}`;
 }
 
 function renderMask() {
@@ -338,6 +362,7 @@ function makeSlamState() {
     pose: { x: 0, y: 0, theta: -0.15 },
     path: [{ x: 0, y: 0 }],
     landmarks: [],
+    forks: [],
     loop: "idle",
   };
 }
@@ -377,6 +402,19 @@ function stepSlam() {
   slamState.landmarks = slamState.landmarks
     .filter((point) => point.weight > 0.08)
     .slice(-desired);
+
+  if (frame % 42 === 0) {
+    const choices = ["left", "straight", "right"].filter((_, index) => ((frame / 42) + index) % 2 === 0 || index === 1);
+    const selected = choices.includes(config.branch?.default_turn) ? config.branch.default_turn : choices[0];
+    slamState.forks.push({
+      x: slamState.pose.x,
+      y: slamState.pose.y,
+      theta: slamState.pose.theta,
+      choices,
+      selected,
+    });
+    if (slamState.forks.length > 9) slamState.forks.shift();
+  }
 
   const first = slamState.path[0];
   const distanceToStart = Math.hypot(slamState.pose.x - first.x, slamState.pose.y - first.y);
@@ -426,6 +464,31 @@ function renderSlam() {
   });
   ctx.stroke();
 
+  slamState.forks.forEach((fork) => {
+    const p = toScreen(fork);
+    if (p.x < -20 || p.x > w + 20 || p.y < -20 || p.y > h + 20) return;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(fork.theta);
+    ctx.strokeStyle = "#64d6a0";
+    ctx.lineWidth = 2;
+    const rays = { left: -0.75, straight: 0, right: 0.75 };
+    fork.choices.forEach((choice) => {
+      ctx.save();
+      ctx.rotate(rays[choice]);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(28, 0);
+      ctx.stroke();
+      ctx.restore();
+    });
+    ctx.fillStyle = fork.selected === "straight" ? "#f2b13c" : "#64d6a0";
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
   ctx.save();
   ctx.translate(center.x, center.y);
   ctx.rotate(pose.theta);
@@ -441,11 +504,12 @@ function renderSlam() {
 
   ctx.fillStyle = "rgba(255,255,255,.72)";
   ctx.font = "13px Arial";
-  ctx.fillText("browser-side SLAM demo: feature odometry / local map", 16, 24);
+  ctx.fillText("line-only topology demo: odometry + fork nodes", 16, 24);
 
   $("slamFrame").textContent = String(slamState.frame);
   $("slamFeatures").textContent = String(slamState.landmarks.length);
   $("slamLoop").textContent = slamState.loop;
+  $("slamForks").textContent = String(slamState.forks.length);
 }
 
 function runSlam() {
@@ -471,6 +535,8 @@ function toYaml(data) {
   ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height"].forEach((key) => lines.push(`${key}: ${data[key]}`));
   lines.push("pid:");
   Object.entries(data.pid).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
+  lines.push("branch:");
+  Object.entries(data.branch || defaultConfig.branch).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   lines.push("colors_hsv:");
   Object.entries(data.colors_hsv).forEach(([name, spec]) => {
     lines.push(`  ${name}:`);
@@ -507,6 +573,7 @@ async function loadConfig() {
     if (!response.ok) throw new Error(response.statusText);
     config = { ...structuredCloneSafe(defaultConfig), ...(await response.json()) };
     config.pid = { ...defaultConfig.pid, ...(config.pid || {}) };
+    config.branch = { ...defaultConfig.branch, ...(config.branch || {}) };
     config.colors_hsv = { ...defaultConfig.colors_hsv, ...(config.colors_hsv || {}) };
     config.slam_demo = { ...defaultConfig.slam_demo, ...(config.slam_demo || {}) };
     config.task_graph = config.task_graph || structuredCloneSafe(defaultConfig.task_graph);
@@ -618,6 +685,13 @@ function handleInput(event) {
   }
   if (target.dataset.slam) {
     config.slam_demo[target.dataset.slam] = Number(target.value);
+    renderSlamEditor();
+    renderSlam();
+    renderYaml();
+  }
+  if (target.dataset.branch) {
+    const key = target.dataset.branch;
+    config.branch[key] = key === "default_turn" ? target.value : Number(target.value);
     renderSlamEditor();
     renderSlam();
     renderYaml();

@@ -20,6 +20,19 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = PROJECT_ROOT / "config.yaml"
 DEFAULT_FRONTEND = PROJECT_ROOT / "frontend"
+DEFAULT_SLAM_DEMO = {
+    "enabled": True,
+    "mode": "feature_odometry",
+    "feature_count": 90,
+    "map_decay": 0.94,
+    "motion_scale": 1.0,
+    "loop_threshold": 0.42,
+}
+DEFAULT_BRANCH = {
+    "default_turn": "straight",
+    "fork_confidence": 0.18,
+    "turn_bias": 0.28,
+}
 
 
 @dataclass
@@ -130,7 +143,13 @@ def _parse_scalar(value: str) -> Any:
 
 
 def _read_known_yaml(path: Path) -> Dict[str, Any]:
-    data: Dict[str, Any] = {"pid": {}, "colors_hsv": {}, "task_graph": {"nodes": [], "edges": []}}
+    data: Dict[str, Any] = {
+        "pid": {},
+        "branch": dict(DEFAULT_BRANCH),
+        "colors_hsv": {},
+        "task_graph": {"nodes": [], "edges": []},
+        "slam_demo": dict(DEFAULT_SLAM_DEMO),
+    }
     if not path.exists():
         return data
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -154,6 +173,12 @@ def _read_known_yaml(path: Path) -> Dict[str, Any]:
         elif section == "pid" and indent == 2 and ":" in line:
             key, value = line.split(":", 1)
             data["pid"][key] = _parse_scalar(value)
+        elif section == "branch" and indent == 2 and ":" in line:
+            key, value = line.split(":", 1)
+            data["branch"][key.strip()] = _parse_scalar(value)
+        elif section == "slam_demo" and indent == 2 and ":" in line:
+            key, value = line.split(":", 1)
+            data["slam_demo"][key.strip()] = _parse_scalar(value)
         elif section == "colors_hsv" and indent == 2 and line.endswith(":"):
             color = line[:-1]
             data["colors_hsv"][color] = {}
@@ -180,10 +205,16 @@ def read_config(path: Path) -> Dict[str, Any]:
     else:
         loaded = _read_known_yaml(path)
     loaded.setdefault("pid", {})
+    loaded.setdefault("branch", dict(DEFAULT_BRANCH))
     loaded.setdefault("colors_hsv", {})
     loaded.setdefault("task_graph", {"nodes": [], "edges": []})
+    loaded.setdefault("slam_demo", dict(DEFAULT_SLAM_DEMO))
     loaded["task_graph"].setdefault("nodes", [])
     loaded["task_graph"].setdefault("edges", [])
+    for key, value in DEFAULT_SLAM_DEMO.items():
+        loaded["slam_demo"].setdefault(key, value)
+    for key, value in DEFAULT_BRANCH.items():
+        loaded["branch"].setdefault(key, value)
     return loaded
 
 
@@ -207,6 +238,10 @@ def dump_config(data: Dict[str, Any]) -> str:
     lines.append("pid:")
     for key, value in (data.get("pid") or {}).items():
         lines.append(f"  {key}: {_yaml_value(value)}")
+    lines.append("branch:")
+    branch = data.get("branch") or DEFAULT_BRANCH
+    for key, value in branch.items():
+        lines.append(f"  {key}: {_yaml_value(value)}")
     lines.append("colors_hsv:")
     for name, spec in (data.get("colors_hsv") or {}).items():
         lines.append(f"  {name}:")
@@ -226,6 +261,10 @@ def dump_config(data: Dict[str, Any]) -> str:
         lines.append(f"      to: {_yaml_value(edge.get('to', ''))}")
         if "condition" in edge:
             lines.append(f"      condition: {_yaml_value(edge['condition'])}")
+    lines.append("slam_demo:")
+    slam_demo = data.get("slam_demo") or DEFAULT_SLAM_DEMO
+    for key, value in slam_demo.items():
+        lines.append(f"  {key}: {_yaml_value(value)}")
     return "\n".join(lines) + "\n"
 
 
