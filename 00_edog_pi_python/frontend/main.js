@@ -21,6 +21,8 @@ const defaultConfig = {
     turn_bias: 0.28,
   },
   gamepad: {
+    transport: "usb",
+    web_command_path: "/tmp/edog_web_gamepad.json",
     axis_forward: 1,
     axis_side: 0,
     axis_roll: 2,
@@ -179,7 +181,17 @@ function renderAll() {
 function renderGamepadEditor() {
   const root = $("gamepadEditor");
   if (!root) return;
-  const rows = Object.entries(gamepadMeta).map(([key, [label, min, max, step]]) => {
+  const rows = [`
+    <label class="param-row">
+      <span>手柄通路</span>
+      <select data-gamepad="transport">
+        ${["usb", "disabled", "web"].map((value) => `<option value="${value}" ${config.gamepad.transport === value ? "selected" : ""}>${value}</option>`).join("")}
+      </select>
+    </label>
+    <label class="param-row">
+      <span>Web命令文件</span>
+      <input value="${config.gamepad.web_command_path || defaultConfig.gamepad.web_command_path}" data-gamepad="web_command_path" />
+    </label>`].concat(Object.entries(gamepadMeta).map(([key, [label, min, max, step]]) => {
     const value = config.gamepad?.[key] ?? defaultConfig.gamepad[key];
     return `
       <label class="param-row">
@@ -187,7 +199,7 @@ function renderGamepadEditor() {
         <input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-gamepad="${key}" />
         <input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-gamepad="${key}" />
       </label>`;
-  });
+  }));
   root.innerHTML = rows.join("") + `
     <div class="mapping-block">
       <h3>模式键位</h3>
@@ -786,6 +798,11 @@ function handleInput(event) {
   }
   if (target.dataset.gamepad) {
     const key = target.dataset.gamepad;
+    if (key === "transport" || key === "web_command_path") {
+      config.gamepad[key] = target.value;
+      renderYaml();
+      return;
+    }
     const integerKeys = new Set(["axis_forward", "axis_side", "axis_roll", "axis_pitch", "axis_left_trigger", "axis_right_trigger", "button_emergency_stop", "button_manual", "min_height", "max_height", "gait"]);
     config.gamepad[key] = integerKeys.has(key) ? Math.round(Number(target.value)) : Number(target.value);
     renderGamepadEditor();

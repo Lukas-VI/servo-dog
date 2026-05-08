@@ -50,6 +50,9 @@ python -m backend.app --dry-run --video path/to/test.mp4 --mode track --debug-di
 - Abnormal shutdown attempts to send stop when a real backend is active.
 - The loop target is 14 Hz, matching the old receive-rate comment.
 
-See `docs/operator_quickstart.md` for competition operation, systemd services,
-browser tuning, and Xbox controller mapping. See
-`docs/gamepad_value_ranges.md` for the explicit config value ranges.
+中文操作文档：
+
+- `docs/operator_quickstart.md`：连接、服务、调试、开始任务。
+- `docs/gamepad_value_ranges.md`：手柄三种通路、键位、值域、优先级。
+- `docs/vision_strategy.md`：巡线、岔路、SLAM 与 SOTA 方案判断。
+- `docs/map_import_export.md`：赛道拓扑地图录入和导入方案。

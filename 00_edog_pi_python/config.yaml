@@ -18,6 +18,8 @@ branch:
   fork_confidence: 0.18
   turn_bias: 0.28
 gamepad:
+  transport: usb
+  web_command_path: /tmp/edog_web_gamepad.json
   axis_forward: 1
   axis_side: 0
   axis_roll: 2

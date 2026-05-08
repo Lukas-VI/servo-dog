@@ -34,6 +34,8 @@ DEFAULT_BRANCH = {
     "turn_bias": 0.28,
 }
 DEFAULT_GAMEPAD = {
+    "transport": "usb",
+    "web_command_path": "/tmp/edog_web_gamepad.json",
     "axis_forward": 1,
     "axis_side": 0,
     "axis_roll": 2,
@@ -341,6 +343,9 @@ class DebugHandler(SimpleHTTPRequestHandler):
         if path == "/api/frame.jpg":
             self._send_frame()
             return
+        if path == "/api/gamepad":
+            self._send_gamepad()
+            return
         if path == "/favicon.ico":
             self.send_response(HTTPStatus.NO_CONTENT)
             self.end_headers()
@@ -348,6 +353,9 @@ class DebugHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        if self.path == "/api/gamepad":
+            self._receive_gamepad()
+            return
         if self.path != "/api/config":
             self.send_error(HTTPStatus.NOT_FOUND)
             return
@@ -360,6 +368,35 @@ class DebugHandler(SimpleHTTPRequestHandler):
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
             return
         self._send_json({"ok": True, "config": str(self.config_path)})
+
+    def _gamepad_command_path(self) -> Path:
+        config = read_config(self.config_path)
+        gamepad = config.get("gamepad") or {}
+        return Path(str(gamepad.get("web_command_path", DEFAULT_GAMEPAD["web_command_path"])))
+
+    def _send_gamepad(self) -> None:
+        path = self._gamepad_command_path()
+        if not path.exists():
+            self._send_json({"ok": True, "connected": False, "message": "no web gamepad command"})
+            return
+        try:
+            self._send_json(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+
+    def _receive_gamepad(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = self.rfile.read(length)
+        try:
+            data = json.loads(payload.decode("utf-8"))
+            data["updated_at"] = time.time()
+            path = self._gamepad_command_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
+        self._send_json({"ok": True, "path": str(path)})
 
     def _send_json(self, payload: Dict[str, Any]) -> None:
         encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")

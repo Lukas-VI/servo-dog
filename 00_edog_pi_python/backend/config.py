@@ -33,6 +33,8 @@ class BranchConfig:
 
 @dataclass
 class GamepadConfig:
+    transport: str = "usb"
+    web_command_path: str = "/tmp/edog_web_gamepad.json"
     axis_forward: int = 1
     axis_side: int = 0
     axis_roll: int = 2

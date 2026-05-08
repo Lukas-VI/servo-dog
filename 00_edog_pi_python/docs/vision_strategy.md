@@ -1,56 +1,115 @@
-# Pure Vision Strategy
+# 纯视觉巡线与建图策略
 
-## V1 Default
+## 当前结论
 
-The first version uses only camera input and OpenCV:
+当前默认算法不是严格意义上的 SOTA 深度学习方案。它是面向树莓派实时性和比赛可调试性的工程优先方案：
 
-- Resize to a stable processing size.
-- Crop the lower road region.
-- Equalize grayscale, blur, adaptive threshold.
-- Canny edges plus probabilistic Hough line segments.
-- Weighted line center estimates lateral error.
-- PID maps error to side velocity and yaw.
-- HSV masks detect task colors.
-- Split the far ROI into left, straight, and right zones to detect forks.
+- OpenCV 灰度增强；
+- 自适应阈值；
+- Canny 边缘；
+- HoughLinesP 线段检测；
+- 加权线中心估计；
+- PID 输出横移和转向；
+- 远端 ROI 分区判断左、中、右岔路。
 
-This is a deliberate upgrade over the old pixel scan. It remains simple enough
-for Raspberry Pi, but is less brittle under broken line segments and lighting
-changes.
+这套方案优点是轻、可解释、低部署风险，适合先跑通比赛。缺点是对强反光、阴影、复杂背景、破损线段仍然敏感。
 
-## V2 Candidate
+## 更先进的候选方案
 
-Because the current course has no QR code, AprilTag, or ArUco anchors, the next
-production step is line-only topological localization:
+后续可以分三层升级：
 
-- treat each confident fork as a node in a route graph;
-- store available exits as `left`, `straight`, and `right`;
-- use odometry only between forks, then snap decisions back to the route graph;
-- keep `branch.default_turn`, `branch.fork_confidence`, and `branch.turn_bias`
-  configurable from the browser panel.
+1. 传统视觉增强版：
+   - 逆透视 IPM；
+   - 形态学骨架化；
+   - RANSAC / 多项式拟合；
+   - 连通域和拓扑图提取；
+   - 卡尔曼滤波或粒子滤波稳定线位。
 
-This is more practical than full visual SLAM for a marked race track: it gives
-the state machine useful semantic progress without requiring textured walls,
-camera calibration, or loop closure to be perfect.
+2. 轻量学习分割：
+   - Fast-SCNN、ENet、BiSeNetV2、MobileNet-DeepLab 等轻量语义分割；
+   - 输出赛道线 mask，再做骨架和岔路拓扑；
+   - 需要采集并标注赛道图片。
 
-## Browser SLAM Demo
+3. 端到端导航研究：
+   - imitation learning 或强化学习；
+   - 不建议作为当前比赛主线，因为调试和安全风险太高。
 
-The debug console includes a browser-side SLAM demo tab. It is intentionally a
-teaching and tuning surface, not the robot's production localization backend:
+所以，当前实现不是“最先进论文方案”，而是“树莓派可部署、可解释、可快速调参”的第一版。下一版最推荐的是“轻量分割 + 拓扑骨架”，而不是直接上 ORB-SLAM3。
 
-- simulates feature odometry, pose drift, local landmarks, fork nodes, and a
-  loop-closure candidate signal;
-- keeps feature count, map decay, motion scale, and loop threshold in
-  `config.yaml`;
-- shares branch parameters with the production state machine;
-- can run next to the live camera stream while pure-vision tracking remains the
-  default control path.
+## SLAM 是否建图和持久化
 
-If the rules later allow visual anchors, AprilTag/ArUco fixed-point resets can
-be added back as optional corrections. They are no longer the first production
-assumption.
+当前浏览器里的 SLAM 页是演示和调参面板，不是正式生产 SLAM：
 
-## Research Only
+- 会在浏览器内模拟位姿、特征点、岔路节点；
+- 不会自动把真实赛道地图持久化到磁盘；
+- 不会在机器人重启后恢复真实地图；
+- 不参与当前串口控制闭环。
 
-ORB-SLAM3 and similar visual SLAM stacks are useful references, but they are not
-the default path for this robot because deployment, calibration, and real-time
-performance risk are high on Raspberry Pi.
+生产主线应改名为“巡线拓扑地图”更准确。它需要持久化的不是稠密 SLAM 地图，而是：
+
+- 岔路节点；
+- 每个岔路可选出口：`left`、`straight`、`right`；
+- 节点之间的连线；
+- 触发条件和动作；
+- 可选的里程计距离或帧数估计。
+
+推荐持久化文件：
+
+```text
+/home/pi/edog_pi_python/current/maps/<map_name>.json
+```
+
+建议结构：
+
+```json
+{
+  "name": "race_track_v1",
+  "version": 1,
+  "nodes": [
+    {"id": "start", "type": "start"},
+    {"id": "fork_1", "type": "fork", "exits": ["left", "straight"]},
+    {"id": "finish", "type": "finish"}
+  ],
+  "edges": [
+    {"from": "start", "to": "fork_1", "condition": "line_confidence>0.35"},
+    {"from": "fork_1", "to": "finish", "choice": "straight"}
+  ]
+}
+```
+
+## 如何录入和导入
+
+目前可用方式是通过 Web 的“任务图”编辑节点和连线，然后保存到 `config.yaml` 的 `task_graph`。这适合少量岔路和固定比赛流程。
+
+建议后续增加两种正式方式：
+
+1. 手动录入：
+   - 在 Web 端新增“地图”页；
+   - 点击新增岔路节点；
+   - 选择出口；
+   - 连接节点；
+   - 保存为 `maps/<map_name>.json`。
+
+2. 试跑录入：
+   - 机器人低速巡线；
+   - 每检测到高置信岔路就记录节点；
+   - 操作者在 Web 端确认这个岔路是左/直/右哪些出口；
+   - 保存拓扑图；
+   - 第二次运行时按拓扑图下发路线选择。
+
+导入方式应支持：
+
+- 从 Web 上传 JSON；
+- 从 `maps/` 目录选择；
+- 将导入地图同步生成或覆盖 `config.yaml` 的 `task_graph`。
+
+## 当前建议
+
+比赛近期优先级：
+
+1. 保持当前 OpenCV 巡线闭环稳定。
+2. 增加真实视频录制和回放。
+3. 增加赛道拓扑 JSON 的导入/导出。
+4. 再考虑轻量分割模型。
+
+不建议当前直接做完整视觉 SLAM。赛道只有线和岔路，缺少稳定纹理和视觉锚点，完整 SLAM 的成本会明显高于收益。

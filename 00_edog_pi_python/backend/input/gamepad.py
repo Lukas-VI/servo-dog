@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+import time
+from pathlib import Path
 from typing import Dict, Optional
 
 from ..config import GamepadConfig
@@ -130,3 +133,55 @@ class GamepadReader:
         if value < -0.5:
             return 0.0
         return max(0.0, min(1.0, (value + 1.0) * 0.5))
+
+
+class WebGamepadReader:
+    def __init__(self, command_path: str, timeout_s: float = 0.8) -> None:
+        self.command_path = Path(command_path)
+        self.timeout_s = timeout_s
+        self._last_mode = None
+        self._last_action = None
+
+    def poll(self) -> GamepadCommand:
+        if not self.command_path.exists():
+            return GamepadCommand(connected=False)
+        try:
+            data = json.loads(self.command_path.read_text(encoding="utf-8"))
+        except Exception:
+            return GamepadCommand(connected=False)
+
+        updated_at = float(data.get("updated_at", 0.0) or 0.0)
+        if updated_at and time.time() - updated_at > self.timeout_s:
+            return GamepadCommand(connected=False)
+
+        motion_data = data.get("motion") or {}
+        selected_mode = data.get("selected_mode")
+        selected_action = data.get("selected_action")
+        mode = Mode(selected_mode) if selected_mode and selected_mode != self._last_mode else None
+        action = selected_action if selected_action and selected_action != self._last_action else None
+        self._last_mode = selected_mode
+        self._last_action = selected_action
+        return GamepadCommand(
+            connected=True,
+            emergency_stop=bool(data.get("emergency_stop", False)),
+            manual_enabled=bool(data.get("manual_enabled", False)),
+            selected_mode=mode,
+            selected_action=action,
+            motion=MotionCommand(
+                forward=float(motion_data.get("forward", 0.0)),
+                side=float(motion_data.get("side", 0.0)),
+                yaw=float(motion_data.get("yaw", 0.0)),
+                roll=float(motion_data.get("roll", 0.0)),
+                pitch=float(motion_data.get("pitch", 0.0)),
+                stand_height=int(motion_data.get("stand_height", 144)),
+                gait=int(motion_data.get("gait", 2)),
+            ),
+        )
+
+
+def make_gamepad_reader(cfg: GamepadConfig, initial_height: int = 144):
+    if cfg.transport == "disabled":
+        return None
+    if cfg.transport == "web":
+        return WebGamepadReader(cfg.web_command_path)
+    return GamepadReader(mapping_from_config(cfg), initial_height)

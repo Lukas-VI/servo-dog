@@ -9,6 +9,8 @@ def test_load_config_fallback_reads_gamepad_without_yaml(tmp_path, monkeypatch):
         """
 stand_height: 144
 gamepad:
+  transport: web
+  web_command_path: /tmp/edog_web_gamepad.json
   axis_forward: 1
   axis_side: 0
   axis_roll: 2
@@ -43,6 +45,8 @@ branch:
     cfg = load_config(str(Path(path)))
 
     assert cfg.gamepad.axis_roll == 2
+    assert cfg.gamepad.transport == "web"
+    assert cfg.gamepad.web_command_path == "/tmp/edog_web_gamepad.json"
     assert cfg.gamepad.axis_right_trigger == 5
     assert cfg.gamepad.mode_buttons == {"0": "track", "2": "stop"}
     assert cfg.gamepad.action_buttons == {"3": "updais"}
