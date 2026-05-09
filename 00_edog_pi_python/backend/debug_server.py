@@ -396,7 +396,7 @@ def dump_config(data: Dict[str, Any]) -> str:
     lines.append("  nodes:")
     for node in graph.get("nodes", []):
         lines.append(f"    - id: {_yaml_value(node.get('id', ''))}")
-        for key in ["label", "type", "color", "action"]:
+        for key in ["label", "type", "color", "action", "x", "y"]:
             if key in node:
                 lines.append(f"      {key}: {_yaml_value(node[key])}")
     lines.append("  edges:")

@@ -55,7 +55,7 @@ class EdogStateMachine:
         if self.mode == Mode.STOP:
             return StateDecision(Mode.STOP, action="stop", reason="stop mode")
         if now < self._action_until:
-            return StateDecision(self.mode, reason="action cooldown")
+            return StateDecision(self.mode, motion=self._track_motion(vision), reason="action cooldown tracking")
 
         if vision.detected_colors:
             for color, score in sorted(

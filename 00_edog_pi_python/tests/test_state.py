@@ -24,6 +24,15 @@ def test_color_triggers_action():
     assert decision.mode == Mode.UP_DAIS
 
 
+def test_action_cooldown_keeps_tracking():
+    sm = EdogStateMachine(RuntimeConfig(), Mode.TRACK)
+    first = sm.decide(VisionResult(confidence=0.7, detected_colors={"purple": 0.3}))
+    assert first.action == "lean_right"
+    followup = sm.decide(VisionResult(line_error=0.2, confidence=0.8, detected_colors={}))
+    assert followup.motion is not None
+    assert followup.reason == "action cooldown tracking"
+
+
 def test_byroad_a_biases_toward_left_branch():
     sm = EdogStateMachine(RuntimeConfig(), Mode.BYROAD_A)
     straight = sm.decide(VisionResult(confidence=0.9, branches=("straight",), branch_confidence=0.9, detected_colors={}))

@@ -1,0 +1,24 @@
+{
+  "name": "right_resident",
+  "version": 1,
+  "mode": "line_topology",
+  "branch_default": "right",
+  "nodes": [
+    { "id": "start", "label": "集散中心", "type": "track", "color": "black", "action": "", "x": 90, "y": 285 },
+    { "id": "speed_bump", "label": "减速带", "type": "track", "color": "black", "action": "", "x": 190, "y": 220 },
+    { "id": "fork", "label": "分岔口", "type": "fork", "color": "green", "action": "", "x": 315, "y": 170 },
+    { "id": "resident_marker", "label": "棕色条带住户", "type": "resident", "color": "brown", "action": "lean_left", "x": 500, "y": 236 },
+    { "id": "delivery_hold", "label": "投递后驻守循迹", "type": "track", "color": "black", "action": "", "x": 470, "y": 165 },
+    { "id": "platform", "label": "上下高台", "type": "track", "color": "blue", "action": "updais", "x": 315, "y": 300 },
+    { "id": "finish", "label": "回到集散中心", "type": "stop", "color": "black", "action": "stop", "x": 90, "y": 330 }
+  ],
+  "edges": [
+    { "from": "start", "to": "speed_bump", "condition": "出发" },
+    { "from": "speed_bump", "to": "fork", "condition": "减速带通过" },
+    { "from": "fork", "to": "resident_marker", "condition": "锁定右岔" },
+    { "from": "resident_marker", "to": "delivery_hold", "condition": "识别棕色并投递" },
+    { "from": "delivery_hold", "to": "platform", "condition": "动作冷却仍循迹" },
+    { "from": "platform", "to": "finish", "condition": "返回" }
+  ],
+  "notes": "右住户任务图。规则要求只能在起点选择任务，因此 Web 首页会先载入本图，再启动 byroad_b 自动闭环。"
+}

@@ -129,6 +129,8 @@ def _read_known_yaml(path: Path) -> Dict:
     section = None
     color = None
     gamepad_map = None
+    graph_list = None
+    graph_item = None
     for raw in path.read_text(encoding="utf-8").splitlines():
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
@@ -138,11 +140,15 @@ def _read_known_yaml(path: Path) -> Dict:
             section = line[:-1]
             color = None
             gamepad_map = None
+            graph_list = None
+            graph_item = None
             data.setdefault(section, {})
         elif indent == 0 and ":" in line:
             key, value = line.split(":", 1)
             data[key] = _parse_scalar(value)
             section = None
+            graph_list = None
+            graph_item = None
         elif section in {"pid", "branch", "vision", "gamepad"} and indent == 2 and line.endswith(":"):
             gamepad_map = line[:-1].strip()
             data[section].setdefault(gamepad_map, {})
@@ -159,6 +165,17 @@ def _read_known_yaml(path: Path) -> Dict:
         elif section == "colors_hsv" and color and indent == 4 and ":" in line:
             key, value = line.split(":", 1)
             data["colors_hsv"][color][key] = _parse_scalar(value)
+        elif section == "task_graph" and indent == 2 and line.endswith(":"):
+            graph_list = line[:-1]
+            graph_item = None
+            data["task_graph"].setdefault(graph_list, [])
+        elif section == "task_graph" and graph_list and indent == 4 and line.startswith("- ") and ":" in line:
+            key, value = line[2:].split(":", 1)
+            graph_item = {key.strip(): _parse_scalar(value)}
+            data["task_graph"].setdefault(graph_list, []).append(graph_item)
+        elif section == "task_graph" and graph_item is not None and indent == 6 and ":" in line:
+            key, value = line.split(":", 1)
+            graph_item[key.strip()] = _parse_scalar(value)
     return data
 
 

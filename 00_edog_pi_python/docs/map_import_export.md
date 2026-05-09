@@ -26,7 +26,8 @@
 
 ```text
 maps/race_track_v1.json
-maps/test_track_left_branch.json
+maps/left_resident.json
+maps/right_resident.json
 ```
 
 地图文件描述拓扑，而不是保存完整图像点云。
@@ -52,7 +53,7 @@ maps/test_track_left_branch.json
 }
 ```
 
-`x/y` 是可选字段。没有填写时，运行时会按任务图顺序生成粗略坐标；填写后，`runtime_status.map_pose` 会用这些坐标显示当前位置。
+`x/y` 是任务图编辑器里的可拖动坐标。没有填写时，Web 和运行时会按任务图顺序生成粗略坐标；填写后，`runtime_status.map_pose` 会用这些坐标显示当前位置。
 
 ## 录入方式
 

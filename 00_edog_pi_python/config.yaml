@@ -83,6 +83,79 @@ colors_hsv:
   black:
     min: [0, 0, 0]
     max: [180, 255, 80]
+task_graph:
+  nodes:
+    - id: start
+      label: 集散中心
+      type: track
+      color: black
+      action: ""
+      x: 90
+      y: 285
+    - id: speed_bump
+      label: 减速带
+      type: track
+      color: black
+      action: ""
+      x: 190
+      y: 220
+    - id: fork
+      label: 分岔口
+      type: fork
+      color: green
+      action: ""
+      x: 315
+      y: 170
+    - id: purple_resident
+      label: 紫色住户
+      type: resident
+      color: purple
+      action: lean_right
+      x: 490
+      y: 95
+    - id: brown_resident
+      label: 棕色住户
+      type: resident
+      color: brown
+      action: lean_left
+      x: 490
+      y: 235
+    - id: platform
+      label: 上下高台
+      type: track
+      color: blue
+      action: updais
+      x: 315
+      y: 300
+    - id: finish
+      label: 回到集散中心
+      type: stop
+      color: black
+      action: stop
+      x: 90
+      y: 330
+  edges:
+    - from: start
+      to: speed_bump
+      condition: 出发
+    - from: speed_bump
+      to: fork
+      condition: 减速带通过
+    - from: fork
+      to: purple_resident
+      condition: 左岔/紫色
+    - from: fork
+      to: brown_resident
+      condition: 右岔/棕色
+    - from: purple_resident
+      to: platform
+      condition: 投递后继续循迹
+    - from: brown_resident
+      to: platform
+      condition: 投递后继续循迹
+    - from: platform
+      to: finish
+      condition: 返回
 slam_demo:
   enabled: true
   mode: feature_odometry

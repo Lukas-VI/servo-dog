@@ -17,6 +17,7 @@ INCLUDE = [
     "backend",
     "frontend",
     "docs",
+    "maps",
     "scripts",
     "tests",
     "config.yaml",

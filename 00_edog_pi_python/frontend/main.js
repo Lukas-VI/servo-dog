@@ -75,15 +75,22 @@ const defaultConfig = {
   },
   task_graph: {
     nodes: [
-      { id: "start", label: "Start", type: "track", color: "black", action: "" },
-      { id: "purple_gate", label: "Purple", type: "color", color: "purple", action: "lean_right" },
-      { id: "brown_gate", label: "Brown", type: "color", color: "brown", action: "lean_left" },
-      { id: "finish", label: "Stop", type: "stop", color: "black", action: "stop" },
+      { id: "start", label: "集散中心", type: "track", color: "black", action: "", x: 90, y: 285 },
+      { id: "speed_bump", label: "减速带", type: "track", color: "black", action: "", x: 190, y: 220 },
+      { id: "fork", label: "分岔口", type: "fork", color: "green", action: "", x: 315, y: 170 },
+      { id: "purple_gate", label: "紫色住户", type: "resident", color: "purple", action: "lean_right", x: 490, y: 95 },
+      { id: "brown_gate", label: "棕色住户", type: "resident", color: "brown", action: "lean_left", x: 490, y: 235 },
+      { id: "platform", label: "上下高台", type: "track", color: "blue", action: "updais", x: 315, y: 300 },
+      { id: "finish", label: "回到集散中心", type: "stop", color: "black", action: "stop", x: 90, y: 330 },
     ],
     edges: [
-      { from: "start", to: "purple_gate", condition: "line_confidence>0.35" },
-      { from: "purple_gate", to: "brown_gate", condition: "after_action" },
-      { from: "brown_gate", to: "finish", condition: "after_action" },
+      { from: "start", to: "speed_bump", condition: "出发" },
+      { from: "speed_bump", to: "fork", condition: "减速带通过" },
+      { from: "fork", to: "purple_gate", condition: "左岔/紫色" },
+      { from: "fork", to: "brown_gate", condition: "右岔/棕色" },
+      { from: "purple_gate", to: "platform", condition: "投递后继续循迹" },
+      { from: "brown_gate", to: "platform", condition: "投递后继续循迹" },
+      { from: "platform", to: "finish", condition: "返回" },
     ],
   },
   slam_demo: {
@@ -98,6 +105,7 @@ const defaultConfig = {
 
 const colorOrder = ["blue", "green", "purple", "brown", "black"];
 const colorHex = { blue: "#2d6fe8", green: "#1aa568", purple: "#9451c8", brown: "#8b5b34", black: "#151918" };
+const nodeTypes = ["track", "fork", "resident", "marker", "color", "action", "stop"];
 const pidMeta = {
   kp_side: ["横移 P", 0, 1, 0.01],
   kd_side: ["横移 D", 0, 0.5, 0.01],
@@ -169,6 +177,7 @@ let liveFrames = 0;
 let slamRunning = false;
 let slamTimer = 0;
 let slamState = makeSlamState();
+let draggingNode = null;
 
 const $ = (id) => document.getElementById(id);
 const sourceCanvas = $("sourceCanvas");
@@ -209,6 +218,7 @@ function inRange(hsv, range) {
 }
 
 function renderAll() {
+  normalizeTaskGraph();
   renderColorSelector();
   renderColorEditor();
   renderPidEditor();
@@ -220,6 +230,23 @@ function renderAll() {
   renderSteering();
   renderSlamEditor();
   renderSlam();
+}
+
+function normalizeTaskGraph() {
+  if (!config.task_graph) config.task_graph = structuredCloneSafe(defaultConfig.task_graph);
+  config.task_graph.nodes = Array.isArray(config.task_graph.nodes) ? config.task_graph.nodes : [];
+  config.task_graph.edges = Array.isArray(config.task_graph.edges) ? config.task_graph.edges : [];
+  config.task_graph.nodes.forEach((node, index) => {
+    if (!node.id) node.id = `task_${index + 1}`;
+    if (!node.label) node.label = node.id;
+    if (!node.type) node.type = "track";
+    if (!node.color) node.color = "black";
+    if (node.action === undefined) node.action = "";
+    if (!Number.isFinite(Number(node.x))) node.x = 90 + (index % 4) * 160;
+    if (!Number.isFinite(Number(node.y))) node.y = 90 + Math.floor(index / 4) * 105;
+    node.x = clamp(Number(node.x), 45, 635);
+    node.y = clamp(Number(node.y), 45, 335);
+  });
 }
 
 function setAppMode(mode) {
@@ -408,6 +435,7 @@ function mapToTaskGraph(mapData) {
   if (mapData.branch_default) config.branch.default_turn = mapData.branch_default;
   selectedNodeId = config.task_graph.nodes[0]?.id || "";
   selectedEdgeIndex = 0;
+  normalizeTaskGraph();
 }
 
 function drawImageToSource(image) {
@@ -475,22 +503,31 @@ function renderSteering() {
   $("yawOut").textContent = lastYaw.toFixed(3);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
+}
+
 function renderTaskGraph() {
   const svg = $("taskGraph");
+  normalizeTaskGraph();
   const nodes = config.task_graph.nodes;
   const edges = config.task_graph.edges;
   const positions = {};
-  nodes.forEach((node, index) => {
-    const col = index % 3;
-    const row = Math.floor(index / 3);
-    positions[node.id] = { x: 96 + col * 220, y: 88 + row * 118 };
+  nodes.forEach((node) => {
+    positions[node.id] = { x: Number(node.x), y: Number(node.y) };
   });
   const edgeSvg = edges.map((edge, index) => {
     const a = positions[edge.from] || { x: 40, y: 40 };
     const b = positions[edge.to] || { x: 220, y: 120 };
     return `<g class="edge ${index === selectedEdgeIndex ? "selected" : ""}" data-edge="${index}">
-      <line x1="${a.x + 62}" y1="${a.y}" x2="${b.x - 62}" y2="${b.y}"></line>
-      <text x="${(a.x + b.x) / 2}" y="${(a.y + b.y) / 2 - 8}">${edge.condition || "next"}</text>
+      <line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>
+      <text x="${(a.x + b.x) / 2}" y="${(a.y + b.y) / 2 - 8}">${escapeHtml(edge.condition || "next")}</text>
     </g>`;
   }).join("");
   const nodeSvg = nodes.map((node) => {
@@ -498,14 +535,15 @@ function renderTaskGraph() {
     return `<g class="node ${node.id === selectedNodeId ? "selected" : ""}" data-node="${node.id}">
       <rect x="${pos.x - 66}" y="${pos.y - 30}" width="132" height="60" rx="8"></rect>
       <circle cx="${pos.x - 48}" cy="${pos.y}" r="7" fill="${colorHex[node.color] || "#64748b"}"></circle>
-      <text x="${pos.x - 32}" y="${pos.y - 3}">${node.label}</text>
-      <text class="node-type" x="${pos.x - 32}" y="${pos.y + 16}">${node.type}${node.action ? " / " + node.action : ""}</text>
+      <text x="${pos.x - 32}" y="${pos.y - 3}">${escapeHtml(node.label)}</text>
+      <text class="node-type" x="${pos.x - 32}" y="${pos.y + 16}">${escapeHtml(node.type)}${node.action ? " / " + escapeHtml(node.action) : ""}</text>
     </g>`;
   }).join("");
   svg.innerHTML = `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z"></path></marker></defs>${edgeSvg}${nodeSvg}`;
 }
 
 function renderTaskEditor() {
+  normalizeTaskGraph();
   const nodes = config.task_graph.nodes;
   const edges = config.task_graph.edges;
   const node = nodes.find((item) => item.id === selectedNodeId) || nodes[0];
@@ -514,11 +552,13 @@ function renderTaskEditor() {
     <div class="editor-block">
       <h3>节点</h3>
       ${node ? `
-        <label>ID<input data-node-field="id" value="${node.id}" /></label>
-        <label>名称<input data-node-field="label" value="${node.label}" /></label>
-        <label>类型<select data-node-field="type">${["track", "color", "action", "stop"].map((v) => `<option ${node.type === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+        <label>ID<input data-node-field="id" value="${escapeHtml(node.id)}" /></label>
+        <label>名称<input data-node-field="label" value="${escapeHtml(node.label)}" /></label>
+        <label>类型<select data-node-field="type">${nodeTypes.map((v) => `<option ${node.type === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
         <label>颜色<select data-node-field="color">${colorOrder.map((v) => `<option ${node.color === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
-        <label>动作<input data-node-field="action" value="${node.action || ""}" /></label>
+        <label>动作<input data-node-field="action" value="${escapeHtml(node.action || "")}" /></label>
+        <label>X<input type="number" min="45" max="635" step="1" data-node-field="x" value="${Math.round(Number(node.x))}" /></label>
+        <label>Y<input type="number" min="45" max="335" step="1" data-node-field="y" value="${Math.round(Number(node.y))}" /></label>
         <button data-delete-node="${node.id}" class="danger">删除节点</button>
       ` : ""}
     </div>
@@ -526,7 +566,7 @@ function renderTaskEditor() {
       <h3>连线</h3>
       <label>From<select data-edge-field="from">${nodes.map((n) => `<option ${edge.from === n.id ? "selected" : ""}>${n.id}</option>`).join("")}</select></label>
       <label>To<select data-edge-field="to">${nodes.map((n) => `<option ${edge.to === n.id ? "selected" : ""}>${n.id}</option>`).join("")}</select></label>
-      <label>条件<input data-edge-field="condition" value="${edge.condition || ""}" /></label>
+      <label>条件<input data-edge-field="condition" value="${escapeHtml(edge.condition || "")}" /></label>
       <button data-delete-edge="${selectedEdgeIndex}" class="danger">删除连线</button>
     </div>`;
 }
@@ -737,6 +777,8 @@ function toYaml(data) {
     lines.push(`      type: ${node.type}`);
     lines.push(`      color: ${node.color}`);
     lines.push(`      action: ${node.action || ""}`);
+    lines.push(`      x: ${Math.round(Number(node.x || 0))}`);
+    lines.push(`      y: ${Math.round(Number(node.y || 0))}`);
   });
   lines.push("  edges:");
   data.task_graph.edges.forEach((edge) => {
@@ -770,6 +812,7 @@ async function loadConfig() {
     if (!config.task_graph.nodes || config.task_graph.nodes.length === 0) {
       config.task_graph = structuredCloneSafe(defaultConfig.task_graph);
     }
+    normalizeTaskGraph();
     $("saveState").textContent = "已读取后端配置";
   } catch {
     $("saveState").textContent = "使用浏览器本地配置";
@@ -847,11 +890,15 @@ async function saveConfig() {
     });
     if (!response.ok) throw new Error(response.statusText);
     $("saveState").textContent = "已保存到 config.yaml";
+    return true;
   } catch {
     localStorage.setItem("edog-debug-config", JSON.stringify(config));
     $("saveState").textContent = "后端不可用，已保存到浏览器";
+    return false;
   }
-  renderYaml();
+  finally {
+    renderYaml();
+  }
 }
 
 async function saveMap() {
@@ -872,6 +919,10 @@ async function saveMap() {
 
 async function loadMap() {
   const name = $("mapNameInput").value.trim() || "race_track_v1";
+  await loadNamedMap(name);
+}
+
+async function loadNamedMap(name) {
   try {
     const response = await fetch(`/api/maps/${encodeURIComponent(name)}.json`, { cache: "no-store" });
     if (!response.ok) throw new Error(response.statusText);
@@ -887,6 +938,7 @@ async function loadMap() {
     $("saveState").textContent = `已读取浏览器地图：${name}`;
   }
   renderAll();
+  return true;
 }
 
 function exportMap() {
@@ -921,6 +973,7 @@ async function sendRuntimeCommand(command) {
 
 async function startAutoRuntime(mode) {
   try {
+    await saveConfig();
     const response = await fetch("/api/runtime/auto", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -937,6 +990,13 @@ async function startAutoRuntime(mode) {
     $("consoleSummary").textContent = `自动启动失败：${String(error).slice(0, 90)}`;
     $("saveState").textContent = "自动启动失败";
   }
+}
+
+async function startMissionMap(mapName, mode) {
+  const loaded = await loadNamedMap(mapName);
+  if (!loaded) return;
+  $("mapNameInput").value = mapName;
+  await startAutoRuntime(mode);
 }
 
 async function stopAutoRuntime() {
@@ -1010,9 +1070,9 @@ async function pollConsoleVision() {
 function bindEvents() {
   $("consoleModeBtn").addEventListener("click", () => setAppMode("console"));
   $("tuningModeBtn").addEventListener("click", () => setAppMode("tuning"));
-  $("missionLeftBtn").addEventListener("click", () => startAutoRuntime("byroad_a"));
-  $("missionRightBtn").addEventListener("click", () => startAutoRuntime("byroad_b"));
-  $("missionStraightBtn").addEventListener("click", () => startAutoRuntime("track"));
+  $("missionLeftBtn").addEventListener("click", () => startMissionMap("left_resident", "byroad_a"));
+  $("missionRightBtn").addEventListener("click", () => startMissionMap("right_resident", "byroad_b"));
+  $("missionStraightBtn").addEventListener("click", () => startMissionMap("race_track_v1", "track"));
   $("consoleStopBtn").addEventListener("click", stopAutoRuntime);
   $("consoleVisionToggleBtn").addEventListener("click", () => {
     visionOverlay = !visionOverlay;
@@ -1043,12 +1103,16 @@ function bindEvents() {
   $("runtimeInitBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "stop" }));
   $("runtimeStartBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "track" }));
   $("runtimeStopBtn").addEventListener("click", () => sendRuntimeCommand({ emergency_stop: true, selected_mode: "stop" }));
-  $("runtimeLeftBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "byroad_a" }));
-  $("runtimeStraightBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "track" }));
-  $("runtimeRightBtn").addEventListener("click", () => sendRuntimeCommand({ selected_mode: "byroad_b" }));
+  $("runtimeLeftBtn").addEventListener("click", () => startMissionMap("left_resident", "byroad_a"));
+  $("runtimeStraightBtn").addEventListener("click", () => startMissionMap("race_track_v1", "track"));
+  $("runtimeRightBtn").addEventListener("click", () => startMissionMap("right_resident", "byroad_b"));
   $("saveMapBtn").addEventListener("click", saveMap);
   $("loadMapBtn").addEventListener("click", loadMap);
   $("exportMapBtn").addEventListener("click", exportMap);
+  $("taskGraph").addEventListener("pointerdown", handleGraphPointerDown);
+  $("taskGraph").addEventListener("pointermove", handleGraphPointerMove);
+  $("taskGraph").addEventListener("pointerup", handleGraphPointerUp);
+  $("taskGraph").addEventListener("pointerleave", handleGraphPointerUp);
   document.body.addEventListener("input", handleInput);
   document.body.addEventListener("click", handleClick);
 }
@@ -1151,6 +1215,41 @@ function handleClick(event) {
   if (event.target.dataset.deleteGamepadMap) deleteGamepadMap(event.target.dataset.deleteGamepadMap, event.target.dataset.button);
 }
 
+function svgPointFromEvent(svg, event) {
+  const rect = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox.baseVal;
+  const x = viewBox.x + ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewBox.width;
+  const y = viewBox.y + ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewBox.height;
+  return { x: clamp(x, 45, 635), y: clamp(y, 45, 335) };
+}
+
+function handleGraphPointerDown(event) {
+  const nodeTarget = event.target.closest("[data-node]");
+  if (!nodeTarget) return;
+  selectedNodeId = nodeTarget.dataset.node;
+  draggingNode = selectedNodeId;
+  $("taskGraph").setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+  renderTaskEditor();
+}
+
+function handleGraphPointerMove(event) {
+  if (!draggingNode) return;
+  const node = config.task_graph.nodes.find((item) => item.id === draggingNode);
+  if (!node) return;
+  const point = svgPointFromEvent($("taskGraph"), event);
+  node.x = Math.round(point.x);
+  node.y = Math.round(point.y);
+  renderTaskGraph();
+}
+
+function handleGraphPointerUp() {
+  if (!draggingNode) return;
+  draggingNode = null;
+  renderTaskEditor();
+  renderYaml();
+}
+
 function loadImage(event) {
   stopLive();
   const file = event.target.files?.[0];
@@ -1167,7 +1266,9 @@ function updateNode(field, value) {
   const node = config.task_graph.nodes.find((item) => item.id === selectedNodeId);
   if (!node) return;
   const oldId = node.id;
-  node[field] = value.trim();
+  node[field] = field === "x" || field === "y" ? Math.round(Number(value)) : String(value).trim();
+  if (field === "x") node.x = clamp(Number(node.x), 45, 635);
+  if (field === "y") node.y = clamp(Number(node.y), 45, 335);
   if (field === "id") {
     selectedNodeId = node.id;
     config.task_graph.edges.forEach((edge) => {
@@ -1189,7 +1290,7 @@ function updateEdge(field, value) {
 
 function addNode() {
   const id = `task_${config.task_graph.nodes.length + 1}`;
-  config.task_graph.nodes.push({ id, label: id, type: "track", color: activeColor, action: "" });
+  config.task_graph.nodes.push({ id, label: id, type: "track", color: activeColor, action: "", x: 120, y: 120 });
   selectedNodeId = id;
   renderAll();
 }

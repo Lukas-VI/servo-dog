@@ -25,6 +25,13 @@ http://192.168.12.1:8080
 - “直行循迹”：不预选左右住户，只执行基础自动循迹。
 - “结束/急停”：停止自动进程并发送 stop。
 
+这几个按钮的实际行为：
+
+- 左住户任务：载入 `maps/left_resident.json`，保存到 `config.yaml`，启动 `run_serial.sh --mode byroad_a`。
+- 右住户任务：载入 `maps/right_resident.json`，保存到 `config.yaml`，启动 `run_serial.sh --mode byroad_b`。
+- 直行循迹：载入 `maps/race_track_v1.json`，保存到 `config.yaml`，启动 `run_serial.sh --mode track`。
+- 结束/急停：向 Web 手柄通道写入急停，并终止自动视觉进程。
+
 “调参”页只放 HSV、ROI、PID、手柄映射、任务图等细项，比赛操作时尽量留在控制台主页。
 
 无线 AP 调试网：
@@ -187,7 +194,7 @@ GET  http://192.168.12.1:8080/api/gamepad
    - `岔路速度系数` 控制过岔路时的轻微降速，比赛冲速度时可接近 `1.0`。
    - `岔路锁定秒数` 让目标岔路短时间保持，避免识别一帧丢失后方向抖动。
 7. 调手柄通路和键位。
-8. 在“任务图”里保存/读取地图；运行时反馈里的 `地图位置` 会显示当前边和进度。
+8. 在“任务图”里保存/读取地图；节点可以直接拖动，也可以在节点属性里输入 `X/Y`。运行时反馈里的 `地图位置` 会显示当前边和进度。
 9. 保存配置。
 10. 重启串口运行服务：
 
@@ -203,20 +210,17 @@ sudo systemctl restart edog-runner.service
 2. 确认 Web 调试台可访问。
 3. 确认摄像头画面正常。
 4. 确认手柄通路是 `usb`、`disabled` 或 `web` 中的预期值。
-5. 启动串口服务：
+5. 放置机器人。
+6. 在 Web 控制台选择“左住户任务”“右住户任务”或“直行循迹”。Web 会暂停调试摄像头流，启动自动视觉闭环，并把视觉监视结果继续分发到主页。
+7. 任意异常先点“结束/急停”或按手柄 `B`。
 
-```bash
-sudo systemctl start edog-runner.service
-```
-
-`edog-runner.service` 默认使用 `run_control_only.sh`，也就是不抢 Web 调试台的摄像头，主要负责手柄、Web 初始化、开始、结束、动作和站高控制。需要自动视觉巡线时，停止 Web 摄像头服务或改用 `run_serial.sh --mode track` 独占摄像头。
-
-6. 放置机器人。
-7. 用 Web 的“开始巡线”或手柄按 `A` 进入 `track`。如果要自动视觉闭环，命令行直接：
+命令行手动启动自动视觉闭环：
 
 ```bash
 cd /home/pi/edog_pi_python/current
 ./run_serial.sh --mode track
 ```
+
+`edog-runner.service` 仍保留为控制/手柄兜底服务，但默认不自启。比赛时优先使用 Web 控制台启动自动视觉闭环，避免两个进程同时抢摄像头或串口。
 
 8. 任意时刻按 `B` 急停。
