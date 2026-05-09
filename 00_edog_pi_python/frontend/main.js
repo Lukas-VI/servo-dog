@@ -178,6 +178,7 @@ let slamRunning = false;
 let slamTimer = 0;
 let slamState = makeSlamState();
 let draggingNode = null;
+let autoSaveTimer = 0;
 
 const $ = (id) => document.getElementById(id);
 const sourceCanvas = $("sourceCanvas");
@@ -191,6 +192,18 @@ function structuredCloneSafe(value) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number(value)));
+}
+
+function syncLinkedInputs(target, selector, value) {
+  document.querySelectorAll(selector).forEach((input) => {
+    if (input !== target) input.value = value;
+  });
+}
+
+function scheduleConfigSave(label = "参数已更新，正在同步") {
+  $("saveState").textContent = label;
+  window.clearTimeout(autoSaveTimer);
+  autoSaveTimer = window.setTimeout(() => saveConfig({ silent: true }), 250);
 }
 
 function rgbToHsv(r, g, b) {
@@ -881,7 +894,8 @@ function stopLive() {
   if (liveTimer) window.clearTimeout(liveTimer);
 }
 
-async function saveConfig() {
+async function saveConfig(options = {}) {
+  const silent = Boolean(options.silent);
   try {
     const response = await fetch("/api/config", {
       method: "POST",
@@ -889,11 +903,11 @@ async function saveConfig() {
       body: JSON.stringify(config),
     });
     if (!response.ok) throw new Error(response.statusText);
-    $("saveState").textContent = "已保存到 config.yaml";
+    $("saveState").textContent = silent ? "参数已实时同步" : "已保存到 config.yaml";
     return true;
   } catch {
     localStorage.setItem("edog-debug-config", JSON.stringify(config));
-    $("saveState").textContent = "后端不可用，已保存到浏览器";
+    $("saveState").textContent = silent ? "后端不可用，参数仅保存到浏览器" : "后端不可用，已保存到浏览器";
     return false;
   }
   finally {
@@ -1123,39 +1137,51 @@ function handleInput(event) {
     const color = target.dataset.color;
     const side = target.dataset.side;
     const index = Number(target.dataset.index);
-    config.colors_hsv[color][side][index] = clamp(target.value, 0, index === 0 ? 180 : 255);
-    renderAll();
+    const value = clamp(target.value, 0, index === 0 ? 180 : 255);
+    config.colors_hsv[color][side][index] = value;
+    syncLinkedInputs(target, `[data-color="${color}"][data-side="${side}"][data-index="${index}"]`, value);
+    renderMask();
+    renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.pid) {
-    config.pid[target.dataset.pid] = Number(target.value);
-    renderPidEditor();
+    const key = target.dataset.pid;
+    config.pid[key] = Number(target.value);
+    syncLinkedInputs(target, `[data-pid="${key}"]`, config.pid[key]);
     renderSteering();
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.slam) {
-    config.slam_demo[target.dataset.slam] = Number(target.value);
-    renderSlamEditor();
+    const key = target.dataset.slam;
+    config.slam_demo[key] = Number(target.value);
+    syncLinkedInputs(target, `[data-slam="${key}"]`, config.slam_demo[key]);
     renderSlam();
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.branch) {
     const key = target.dataset.branch;
     config.branch[key] = key === "default_turn" ? target.value : Number(target.value);
-    renderSlamEditor();
+    syncLinkedInputs(target, `[data-branch="${key}"]`, config.branch[key]);
     renderSlam();
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.vision) {
     const key = target.dataset.vision;
     config.vision[key] = key === "exclude_background" ? Number(target.value) >= 0.5 : Number(target.value);
-    renderPidEditor();
+    syncLinkedInputs(target, `[data-vision="${key}"]`, key === "exclude_background" ? Number(target.value) : config.vision[key]);
+    renderMask();
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.gamepad) {
     const key = target.dataset.gamepad;
     if (key === "transport" || key === "web_command_path") {
       config.gamepad[key] = target.value;
       renderYaml();
+      scheduleConfigSave();
       return;
     }
     const integerKeys = new Set(["axis_forward", "axis_side", "axis_yaw", "axis_height", "axis_roll", "axis_pitch", "axis_left_trigger", "axis_right_trigger", "button_emergency_stop", "button_manual", "min_height", "max_height", "gait"]);
@@ -1164,8 +1190,9 @@ function handleInput(event) {
     } else {
       config.gamepad[key] = integerKeys.has(key) ? Math.round(Number(target.value)) : Number(target.value);
     }
-    renderGamepadEditor();
+    syncLinkedInputs(target, `[data-gamepad="${key}"]`, Number(config.gamepad[key]));
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.gamepadMapButton) {
     const group = target.dataset.gamepadMapButton;
@@ -1176,10 +1203,12 @@ function handleInput(event) {
     config.gamepad[group][newButton] = current;
     renderGamepadEditor();
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.gamepadMapValue) {
     config.gamepad[target.dataset.gamepadMapValue][target.dataset.button] = target.value;
     renderYaml();
+    scheduleConfigSave();
   }
   if (target.dataset.nodeField) {
     updateNode(target.dataset.nodeField, target.value);
@@ -1248,6 +1277,7 @@ function handleGraphPointerUp() {
   draggingNode = null;
   renderTaskEditor();
   renderYaml();
+  scheduleConfigSave("任务图坐标已更新，正在同步");
 }
 
 function loadImage(event) {
@@ -1278,6 +1308,7 @@ function updateNode(field, value) {
   }
   renderTaskGraph();
   renderYaml();
+  scheduleConfigSave("任务图节点已更新，正在同步");
 }
 
 function updateEdge(field, value) {
@@ -1286,6 +1317,7 @@ function updateEdge(field, value) {
   edge[field] = value.trim();
   renderTaskGraph();
   renderYaml();
+  scheduleConfigSave("任务图连线已更新，正在同步");
 }
 
 function addNode() {
@@ -1293,6 +1325,7 @@ function addNode() {
   config.task_graph.nodes.push({ id, label: id, type: "track", color: activeColor, action: "", x: 120, y: 120 });
   selectedNodeId = id;
   renderAll();
+  scheduleConfigSave("任务图已更新，正在同步");
 }
 
 function addEdge() {
@@ -1301,6 +1334,7 @@ function addEdge() {
   config.task_graph.edges.push({ from: nodes[0].id, to: nodes[nodes.length - 1].id, condition: "next" });
   selectedEdgeIndex = config.task_graph.edges.length - 1;
   renderAll();
+  scheduleConfigSave("任务图已更新，正在同步");
 }
 
 function deleteNode(id) {
@@ -1308,12 +1342,14 @@ function deleteNode(id) {
   config.task_graph.edges = config.task_graph.edges.filter((edge) => edge.from !== id && edge.to !== id);
   selectedNodeId = config.task_graph.nodes[0]?.id || "";
   renderAll();
+  scheduleConfigSave("任务图已更新，正在同步");
 }
 
 function deleteEdge(index) {
   config.task_graph.edges.splice(index, 1);
   selectedEdgeIndex = Math.max(0, config.task_graph.edges.length - 1);
   renderAll();
+  scheduleConfigSave("任务图已更新，正在同步");
 }
 
 function addGamepadMap(group) {
@@ -1321,11 +1357,13 @@ function addGamepadMap(group) {
   while (config.gamepad[group][String(button)] !== undefined && button < 32) button += 1;
   config.gamepad[group][String(button)] = group === "mode_buttons" ? "track" : "updais";
   renderAll();
+  scheduleConfigSave("手柄映射已更新，正在同步");
 }
 
 function deleteGamepadMap(group, button) {
   delete config.gamepad[group][button];
   renderAll();
+  scheduleConfigSave("手柄映射已更新，正在同步");
 }
 
 document.querySelectorAll(".tab").forEach((button) => {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import signal
 import time
@@ -33,7 +34,8 @@ def main() -> int:
     import cv2
 
     args = parse_args()
-    cfg = load_config(args.config if Path(args.config).exists() else None)
+    config_path = Path(args.config)
+    cfg = load_config(args.config if config_path.exists() else None)
     if args.serial_port:
         cfg.serial_port = args.serial_port
 
@@ -49,9 +51,16 @@ def main() -> int:
     state = EdogStateMachine(cfg, Mode(args.mode))
     gamepad = None if args.no_gamepad else make_gamepad_reader(cfg.gamepad, cfg.stand_height)
     web_control = None if args.no_gamepad else WebGamepadReader(cfg.gamepad.web_command_path)
+    gamepad_signature = json.dumps(asdict(cfg.gamepad), sort_keys=True)
     status_path = Path(cfg.runtime_status_path)
     vision_status_path = Path(cfg.vision_status_path)
     vision_frame_path = Path(cfg.vision_frame_path)
+    try:
+        config_signature = hashlib.sha1(config_path.read_bytes()).hexdigest()
+    except OSError:
+        config_signature = ""
+    last_config_poll = 0.0
+    force_config_reload = False
     stopping = False
 
     def pad_status(pad) -> dict:
@@ -111,12 +120,53 @@ def main() -> int:
         except Exception:
             pass
 
+    def reload_config_if_changed() -> None:
+        nonlocal cfg, gamepad, web_control, gamepad_signature, status_path, vision_status_path, vision_frame_path, frame_period, config_signature, last_config_poll, force_config_reload
+        now = time.monotonic()
+        if not force_config_reload and now - last_config_poll < 0.25:
+            return
+        last_config_poll = now
+        try:
+            next_signature = hashlib.sha1(config_path.read_bytes()).hexdigest()
+        except OSError:
+            return
+        if not force_config_reload and next_signature == config_signature:
+            return
+        try:
+            updated = load_config(str(config_path))
+            if args.serial_port:
+                updated.serial_port = args.serial_port
+        except Exception as exc:
+            print(f"[warn] config hot reload failed: {exc}")
+            return
+        cfg = updated
+        tracker.cfg = cfg
+        state.cfg = cfg
+        status_path = Path(cfg.runtime_status_path)
+        vision_status_path = Path(cfg.vision_status_path)
+        vision_frame_path = Path(cfg.vision_frame_path)
+        frame_period = 1.0 / max(float(cfg.loop_hz), 1.0)
+        updated_gamepad_signature = json.dumps(asdict(cfg.gamepad), sort_keys=True)
+        if not args.no_gamepad and updated_gamepad_signature != gamepad_signature:
+            gamepad = make_gamepad_reader(cfg.gamepad, cfg.stand_height)
+            web_control = WebGamepadReader(cfg.gamepad.web_command_path)
+            gamepad_signature = updated_gamepad_signature
+        config_signature = next_signature
+        force_config_reload = False
+        print("[info] config hot reloaded", flush=True)
+
     def request_stop(_signum, _frame) -> None:
         nonlocal stopping
         stopping = True
 
+    def request_reload(_signum, _frame) -> None:
+        nonlocal force_config_reload
+        force_config_reload = True
+
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, request_reload)
 
     source = args.video if args.video is not None else cfg.camera_index
     if isinstance(source, str) and source.isdigit():
@@ -134,6 +184,7 @@ def main() -> int:
     try:
         while not stopping:
             start = time.monotonic()
+            reload_config_if_changed()
             vision = None
             if vision_available and cap is not None:
                 ok, frame = cap.read()

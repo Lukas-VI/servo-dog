@@ -485,6 +485,9 @@ class DebugHandler(SimpleHTTPRequestHandler):
         try:
             data = json.loads(payload.decode("utf-8"))
             self.config_path.write_text(dump_config(data), encoding="utf-8")
+            proc = self.runtime_process
+            if proc and proc.poll() is None and hasattr(signal, "SIGHUP"):
+                proc.send_signal(signal.SIGHUP)
         except Exception as exc:
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
             return
