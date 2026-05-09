@@ -20,6 +20,8 @@ class PIDConfig:
     kp_yaw: float = 0.80
     kd_yaw: float = 0.18
     forward_speed: float = 0.18
+    side_trim: float = 0.0
+    yaw_trim: float = 0.0
     max_side: float = 0.22
     max_yaw: float = 0.9
     min_track_confidence: float = 0.18

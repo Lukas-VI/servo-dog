@@ -100,6 +100,9 @@ class EdogStateMachine:
         forward = self.cfg.pid.forward_speed if vision.confidence >= min_confidence or now < self._last_reliable_until else 0.03
         if self._target_branch() and (vision.branch_offsets or self._latched_branch):
             forward *= max(0.2, min(1.0, float(self.cfg.branch.fork_speed_factor)))
+        if forward > 0:
+            side += float(getattr(self.cfg.pid, "side_trim", 0.0))
+            yaw += float(getattr(self.cfg.pid, "yaw_trim", 0.0))
         motion = MotionCommand(
             forward=forward,
             side=clamp(side, -self.cfg.pid.max_side, self.cfg.pid.max_side),

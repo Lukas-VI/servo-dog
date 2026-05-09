@@ -49,6 +49,8 @@ DEFAULT_PID = {
     "kp_yaw": 0.80,
     "kd_yaw": 0.18,
     "forward_speed": 0.18,
+    "side_trim": 0.0,
+    "yaw_trim": 0.0,
     "max_side": 0.22,
     "max_yaw": 0.9,
     "min_track_confidence": 0.18,

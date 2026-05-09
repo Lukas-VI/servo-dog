@@ -215,17 +215,18 @@ def main() -> int:
             if pad and pad.selected_mode:
                 state.set_mode(pad.selected_mode)
                 reason = "selected_mode"
-            elif vision is not None:
+            if vision is not None:
                 decision = state.decide(vision)
                 if decision.action == "stop":
                     backend.stop()
-                    reason = "vision_stop"
+                    reason = f"{reason}+vision_stop" if reason != "idle" else "vision_stop"
                 elif decision.action:
                     backend.send_action(decision.action)
-                    reason = f"vision_action:{decision.action}"
+                    action_reason = f"vision_action:{decision.action}"
+                    reason = f"{reason}+{action_reason}" if reason != "idle" else action_reason
                 elif decision.motion:
                     backend.send_motion(decision.motion)
-                    reason = "vision_motion"
+                    reason = f"{reason}+vision_motion" if reason != "idle" else "vision_motion"
             elif state.mode != Mode.STOP:
                 backend.stop()
                 reason = "control_only_no_vision_stop"

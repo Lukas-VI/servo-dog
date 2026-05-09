@@ -17,6 +17,17 @@ def test_track_generates_motion_from_line_error():
     assert decision.motion.yaw < 0
 
 
+def test_mechanical_yaw_trim_adds_constant_bias():
+    cfg = RuntimeConfig()
+    cfg.pid.kp_yaw = 0.0
+    cfg.pid.kd_yaw = 0.0
+    cfg.pid.yaw_trim = 0.12
+    sm = EdogStateMachine(cfg, Mode.TRACK)
+    decision = sm.decide(VisionResult(line_error=0.0, confidence=0.9, detected_colors={}))
+    assert decision.motion is not None
+    assert decision.motion.yaw == 0.12
+
+
 def test_color_triggers_action():
     sm = EdogStateMachine(RuntimeConfig(), Mode.TRACK)
     decision = sm.decide(VisionResult(confidence=0.7, detected_colors={"blue": 0.3}))
