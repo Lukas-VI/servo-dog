@@ -6,20 +6,72 @@
     <title>e-Dog Vision Studio</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body class="console-mode">
     <header class="topbar">
       <div>
         <h1>e-Dog Vision Studio</h1>
-        <p>颜色阈值、转向参数、任务图调试</p>
+        <p>比赛控制台与视觉调参</p>
       </div>
       <div class="top-actions">
+        <button id="consoleModeBtn" class="primary">控制台</button>
+        <button id="tuningModeBtn">调参</button>
         <button id="loadConfigBtn" class="icon-btn" title="从后端读取配置">↻</button>
         <button id="saveConfigBtn" class="primary">保存配置</button>
         <button id="exportBtn">导出 YAML</button>
       </div>
     </header>
 
-    <main class="workspace">
+    <main class="console-pane">
+      <section class="mission-panel">
+        <div class="pane-head">
+          <div>
+            <h2>起点任务选择</h2>
+            <span>规则要求只在起点下发命令，运行中优先手柄急停</span>
+          </div>
+          <button id="consoleStopBtn" class="danger">结束/急停</button>
+        </div>
+        <div class="mission-grid">
+          <button id="missionLeftBtn" class="mission-card">
+            <strong>左住户任务</strong>
+            <span>岔路选左，识别紫色/棕色条带后自动倾斜送球</span>
+          </button>
+          <button id="missionRightBtn" class="mission-card">
+            <strong>右住户任务</strong>
+            <span>岔路选右，识别紫色/棕色条带后自动倾斜送球</span>
+          </button>
+          <button id="missionStraightBtn" class="mission-card compact">
+            <strong>直行循迹</strong>
+            <span>只追线，不预选左右住户</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="monitor-panel">
+        <div class="pane-head">
+          <div>
+            <h2>自动视觉闭环监视</h2>
+            <span id="consoleSummary">等待运行时状态</span>
+          </div>
+          <button id="consoleVisionToggleBtn" class="primary">轨道提取</button>
+        </div>
+        <div class="monitor-grid">
+          <figure>
+            <img id="consoleVisionFrame" alt="自动视觉闭环画面" />
+            <figcaption>闭环视觉流</figcaption>
+          </figure>
+          <div class="console-status">
+            <div><span>自动进程</span><strong id="consoleProcess">-</strong></div>
+            <div><span>运行模式</span><strong id="consoleMode">-</strong></div>
+            <div><span>视觉误差</span><strong id="consoleVisionError">-</strong></div>
+            <div><span>岔路/通道</span><strong id="consoleBranches">-</strong></div>
+            <div><span>地图位置</span><strong id="consolePose">-</strong></div>
+            <div><span>最后串口帧</span><strong id="consoleFrame">-</strong></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <main class="workspace tuning-pane">
       <section class="preview-pane">
         <div class="pane-head">
           <div>

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -86,10 +89,12 @@ DEFAULT_GAMEPAD = {
     "height_axis_step": 1.8,
     "deadzone": 0.10,
     "gait": 2,
-    "mode_buttons": {"0": "track", "2": "stop"},
-    "action_buttons": {"3": "updais", "5": "lean_left", "6": "lean_right"},
+    "mode_buttons": {"0": "track", "2": "stop", "3": "byroad_a", "5": "byroad_b"},
+    "action_buttons": {"6": "lean_left", "7": "lean_right"},
 }
 DEFAULT_RUNTIME_STATUS = "/tmp/edog_runtime_status.json"
+DEFAULT_VISION_STATUS = "/tmp/edog_vision_status.json"
+DEFAULT_VISION_FRAME = "/tmp/edog_vision_frame.jpg"
 
 
 @dataclass
@@ -118,6 +123,7 @@ class CameraStream:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="edog-camera-stream", daemon=True)
         self._thread.start()
 
@@ -357,7 +363,7 @@ def dump_config(data: Dict[str, Any]) -> str:
     if yaml is not None:
         return yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
     lines = []
-    for key in ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height", "runtime_status_path"]:
+    for key in ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height", "runtime_status_path", "vision_status_path", "vision_frame_path"]:
         if key in data:
             lines.append(f"{key}: {_yaml_value(data[key])}")
     lines.append("pid:")
@@ -409,6 +415,7 @@ def dump_config(data: Dict[str, Any]) -> str:
 class DebugHandler(SimpleHTTPRequestHandler):
     config_path = DEFAULT_CONFIG
     camera: Optional[CameraStream] = None
+    runtime_process: Optional[subprocess.Popen] = None
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
@@ -441,6 +448,9 @@ class DebugHandler(SimpleHTTPRequestHandler):
         if path == "/api/runtime/status":
             self._send_runtime_status()
             return
+        if path == "/api/runtime/process":
+            self._send_runtime_process()
+            return
         if path == "/api/maps":
             self._send_maps()
             return
@@ -457,6 +467,12 @@ class DebugHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if self.path == "/api/gamepad":
             self._receive_gamepad()
+            return
+        if path == "/api/runtime/auto":
+            self._start_auto_runtime()
+            return
+        if path == "/api/runtime/stop":
+            self._stop_auto_runtime()
             return
         if path.startswith("/api/maps/"):
             self._save_map(path)
@@ -483,6 +499,14 @@ class DebugHandler(SimpleHTTPRequestHandler):
         config = read_config(self.config_path)
         return Path(str(config.get("runtime_status_path", DEFAULT_RUNTIME_STATUS)))
 
+    def _vision_status_path(self) -> Path:
+        config = read_config(self.config_path)
+        return Path(str(config.get("vision_status_path", DEFAULT_VISION_STATUS)))
+
+    def _vision_frame_path(self) -> Path:
+        config = read_config(self.config_path)
+        return Path(str(config.get("vision_frame_path", DEFAULT_VISION_FRAME)))
+
     def _maps_dir(self) -> Path:
         return self.config_path.parent / "maps"
 
@@ -504,6 +528,58 @@ class DebugHandler(SimpleHTTPRequestHandler):
             self._send_json(json.loads(path.read_text(encoding="utf-8")))
         except Exception as exc:
             self.send_error(HTTPStatus.BAD_REQUEST, str(exc))
+
+    def _send_runtime_process(self) -> None:
+        proc = self.runtime_process
+        running = bool(proc and proc.poll() is None)
+        self._send_json({"ok": True, "running": running, "pid": proc.pid if running and proc else None})
+
+    def _start_auto_runtime(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        data: Dict[str, Any] = {}
+        if length:
+            try:
+                data = json.loads(self.rfile.read(length).decode("utf-8"))
+            except Exception:
+                data = {}
+        mode = str(data.get("mode") or "track")
+        if mode not in {"track", "byroad_a", "byroad_b"}:
+            self.send_error(HTTPStatus.BAD_REQUEST, "invalid auto mode")
+            return
+        proc = self.runtime_process
+        if proc and proc.poll() is None:
+            self._send_json({"ok": True, "running": True, "pid": proc.pid, "mode": mode, "message": "auto runtime already running"})
+            return
+        if self.camera:
+            self.camera.stop()
+        log_path = Path("/tmp/edog_auto_runtime.log")
+        log = log_path.open("ab")
+        env = dict(os.environ)
+        extra_pythonpath = "/usr/local/lib/python3.7/site-packages/cv2/python-3.7:/home/pi/opencv/release/lib/python3"
+        env["PYTHONPATH"] = f"{extra_pythonpath}:{env.get('PYTHONPATH', '')}"
+        env.setdefault("SDL_VIDEODRIVER", "dummy")
+        command = [str(PROJECT_ROOT / "run_serial.sh"), "--mode", mode]
+        try:
+            self.__class__.runtime_process = subprocess.Popen(command, cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT, env=env)
+            log.close()
+        except Exception as exc:
+            log.close()
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+            return
+        self._send_json({"ok": True, "running": True, "pid": self.runtime_process.pid, "mode": mode, "log": str(log_path)})
+
+    def _stop_auto_runtime(self) -> None:
+        proc = self.runtime_process
+        if proc and proc.poll() is None:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        self.__class__.runtime_process = None
+        if self.camera:
+            self.camera.start()
+        self._send_json({"ok": True, "running": False})
 
     def _send_maps(self) -> None:
         root = self._maps_dir()
@@ -537,6 +613,13 @@ class DebugHandler(SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "path": str(path)})
 
     def _send_vision_status(self) -> None:
+        runtime_path = self._vision_status_path()
+        if runtime_path.exists() and time.time() - runtime_path.stat().st_mtime < 2.5:
+            try:
+                self._send_json(json.loads(runtime_path.read_text(encoding="utf-8")))
+                return
+            except Exception:
+                pass
         if not self.camera:
             self._send_json({"ok": False, "message": "camera disabled"})
             return
@@ -590,6 +673,15 @@ class DebugHandler(SimpleHTTPRequestHandler):
         self.wfile.write(frame)
 
     def _send_vision_frame(self) -> None:
+        runtime_frame = self._vision_frame_path()
+        if runtime_frame.exists() and time.time() - runtime_frame.stat().st_mtime < 2.5:
+            frame = runtime_frame.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(frame)))
+            self.end_headers()
+            self.wfile.write(frame)
+            return
         if not self.camera:
             self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "camera disabled")
             return

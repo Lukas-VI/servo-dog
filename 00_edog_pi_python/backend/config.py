@@ -74,8 +74,8 @@ class GamepadConfig:
     height_axis_step: float = 1.8
     deadzone: float = 0.10
     gait: int = 2
-    mode_buttons: Dict[str, str] = field(default_factory=lambda: {"0": "track", "2": "stop"})
-    action_buttons: Dict[str, str] = field(default_factory=lambda: {"3": "updais", "5": "lean_left", "6": "lean_right"})
+    mode_buttons: Dict[str, str] = field(default_factory=lambda: {"0": "track", "2": "stop", "3": "byroad_a", "5": "byroad_b"})
+    action_buttons: Dict[str, str] = field(default_factory=lambda: {"6": "lean_left", "7": "lean_right"})
 
 
 @dataclass
@@ -88,6 +88,8 @@ class RuntimeConfig:
     serial_baud: int = 9600
     stand_height: int = 144
     runtime_status_path: str = "/tmp/edog_runtime_status.json"
+    vision_status_path: str = "/tmp/edog_vision_status.json"
+    vision_frame_path: str = "/tmp/edog_vision_frame.jpg"
     debug: bool = False
     pid: PIDConfig = field(default_factory=PIDConfig)
     branch: BranchConfig = field(default_factory=BranchConfig)

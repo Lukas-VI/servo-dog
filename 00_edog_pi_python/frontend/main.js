@@ -7,6 +7,8 @@ const defaultConfig = {
   serial_baud: 9600,
   stand_height: 144,
   runtime_status_path: "/tmp/edog_runtime_status.json",
+  vision_status_path: "/tmp/edog_vision_status.json",
+  vision_frame_path: "/tmp/edog_vision_frame.jpg",
   pid: {
     kp_side: 0.12,
     kd_side: 0.04,
@@ -61,8 +63,8 @@ const defaultConfig = {
     height_axis_step: 1.8,
     deadzone: 0.10,
     gait: 2,
-    mode_buttons: { 0: "track", 2: "stop" },
-    action_buttons: { 3: "updais", 5: "lean_left", 6: "lean_right" },
+    mode_buttons: { 0: "track", 2: "stop", 3: "byroad_a", 5: "byroad_b" },
+    action_buttons: { 6: "lean_left", 7: "lean_right" },
   },
   colors_hsv: {
     blue: { min: [95, 70, 40], max: [130, 255, 255] },
@@ -161,7 +163,7 @@ let sourceImageData = null;
 let selectedNodeId = "start";
 let selectedEdgeIndex = 0;
 let liveRunning = false;
-let visionOverlay = false;
+let visionOverlay = true;
 let liveTimer = 0;
 let liveFrames = 0;
 let slamRunning = false;
@@ -218,6 +220,13 @@ function renderAll() {
   renderSteering();
   renderSlamEditor();
   renderSlam();
+}
+
+function setAppMode(mode) {
+  document.body.classList.toggle("console-mode", mode === "console");
+  document.body.classList.toggle("tuning-mode", mode === "tuning");
+  $("consoleModeBtn")?.classList.toggle("primary", mode === "console");
+  $("tuningModeBtn")?.classList.toggle("primary", mode === "tuning");
 }
 
 function renderGamepadEditor() {
@@ -698,7 +707,7 @@ function startSlam() {
 
 function toYaml(data) {
   const lines = [];
-  ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height", "runtime_status_path"].forEach((key) => lines.push(`${key}: ${data[key]}`));
+  ["camera_index", "frame_width", "frame_height", "loop_hz", "serial_port", "serial_baud", "stand_height", "runtime_status_path", "vision_status_path", "vision_frame_path"].forEach((key) => lines.push(`${key}: ${data[key]}`));
   lines.push("pid:");
   Object.entries(data.pid).forEach(([key, value]) => lines.push(`  ${key}: ${value}`));
   lines.push("branch:");
@@ -910,6 +919,49 @@ async function sendRuntimeCommand(command) {
   }
 }
 
+async function startAutoRuntime(mode) {
+  try {
+    const response = await fetch("/api/runtime/auto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.message || response.statusText);
+    $("saveState").textContent = `自动视觉闭环已启动：${mode}`;
+    $("consoleSummary").textContent = `自动视觉闭环运行中 · ${mode}`;
+    visionOverlay = true;
+    $("visionBtn")?.classList.toggle("primary", true);
+    await sendRuntimeCommand({ selected_mode: mode });
+  } catch (error) {
+    $("consoleSummary").textContent = `自动启动失败：${String(error).slice(0, 90)}`;
+    $("saveState").textContent = "自动启动失败";
+  }
+}
+
+async function stopAutoRuntime() {
+  try {
+    await sendRuntimeCommand({ emergency_stop: true, selected_mode: "stop" });
+    const response = await fetch("/api/runtime/stop", { method: "POST" });
+    if (!response.ok) throw new Error(response.statusText);
+    $("consoleSummary").textContent = "自动视觉闭环已停止";
+    $("saveState").textContent = "自动视觉闭环已停止";
+  } catch (error) {
+    $("consoleSummary").textContent = `停止失败：${String(error).slice(0, 90)}`;
+  }
+}
+
+async function pollRuntimeProcess() {
+  try {
+    const status = await fetch("/api/runtime/process", { cache: "no-store" }).then((response) => response.json());
+    $("consoleProcess").textContent = status.running ? `running #${status.pid}` : "stopped";
+  } catch {
+    $("consoleProcess").textContent = "-";
+  } finally {
+    window.setTimeout(pollRuntimeProcess, 800);
+  }
+}
+
 async function pollRuntimeStatus() {
   try {
     const response = await fetch("/api/runtime/status", { cache: "no-store" });
@@ -924,6 +976,9 @@ async function pollRuntimeStatus() {
       $("runtimePose").textContent = status.map_pose?.message || "-";
     }
     $("runtimeRaw").textContent = JSON.stringify(status, null, 2);
+    $("consoleMode").textContent = status.mode || "-";
+    $("consolePose").textContent = $("runtimePose").textContent;
+    $("consoleFrame").textContent = status.last_frame_hex || "-";
   } catch (error) {
     $("runtimeRaw").textContent = `runtime 状态不可用: ${String(error)}`;
   } finally {
@@ -931,7 +986,38 @@ async function pollRuntimeStatus() {
   }
 }
 
+async function pollConsoleVision() {
+  try {
+    const status = await fetch("/api/vision/status", { cache: "no-store" }).then((response) => response.json());
+    const vision = status.vision || {};
+    if (vision.ok) {
+      const branches = Array.isArray(vision.branches) && vision.branches.length ? vision.branches.join(",") : "-";
+      const offsets = vision.branch_offsets ? Object.entries(vision.branch_offsets).map(([k, v]) => `${k}:${Number(v).toFixed(2)}`).join(" ") : "";
+      $("consoleVisionError").textContent = `${Number(vision.line_error || 0).toFixed(2)} / ${Number(vision.confidence || 0).toFixed(2)}`;
+      $("consoleBranches").textContent = offsets ? `${branches} · ${offsets}` : branches;
+      $("consoleSummary").textContent = `${status.source || "vision"} · ${new Date().toLocaleTimeString()}`;
+    }
+  } catch {
+    $("consoleVisionError").textContent = "-";
+  } finally {
+    const img = $("consoleVisionFrame");
+    const framePath = visionOverlay ? "/api/vision/frame.jpg" : "/api/frame.jpg";
+    if (img) img.src = `${framePath}?t=${Date.now()}`;
+    window.setTimeout(pollConsoleVision, 300);
+  }
+}
+
 function bindEvents() {
+  $("consoleModeBtn").addEventListener("click", () => setAppMode("console"));
+  $("tuningModeBtn").addEventListener("click", () => setAppMode("tuning"));
+  $("missionLeftBtn").addEventListener("click", () => startAutoRuntime("byroad_a"));
+  $("missionRightBtn").addEventListener("click", () => startAutoRuntime("byroad_b"));
+  $("missionStraightBtn").addEventListener("click", () => startAutoRuntime("track"));
+  $("consoleStopBtn").addEventListener("click", stopAutoRuntime);
+  $("consoleVisionToggleBtn").addEventListener("click", () => {
+    visionOverlay = !visionOverlay;
+    $("consoleVisionToggleBtn").classList.toggle("primary", visionOverlay);
+  });
   $("activeColor").addEventListener("change", (event) => {
     activeColor = event.target.value;
     renderAll();
@@ -1154,3 +1240,5 @@ const saved = localStorage.getItem("edog-debug-config");
 if (saved) config = JSON.parse(saved);
 loadConfig();
 pollRuntimeStatus();
+pollRuntimeProcess();
+pollConsoleVision();

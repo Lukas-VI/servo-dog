@@ -50,6 +50,8 @@ def main() -> int:
     gamepad = None if args.no_gamepad else make_gamepad_reader(cfg.gamepad, cfg.stand_height)
     web_control = None if args.no_gamepad else WebGamepadReader(cfg.gamepad.web_command_path)
     status_path = Path(cfg.runtime_status_path)
+    vision_status_path = Path(cfg.vision_status_path)
+    vision_frame_path = Path(cfg.vision_frame_path)
     stopping = False
 
     def pad_status(pad) -> dict:
@@ -81,6 +83,34 @@ def main() -> int:
         except Exception:
             pass
 
+    def write_vision_status(vision) -> None:
+        if vision is None:
+            return
+        payload = {
+            "ok": True,
+            "updated_at": time.time(),
+            "source": "auto_runtime",
+            "vision": {
+                "ok": True,
+                "line_error": vision.line_error,
+                "line_angle": vision.line_angle,
+                "confidence": vision.confidence,
+                "branches": list(vision.branches),
+                "branch_confidence": vision.branch_confidence,
+                "branch_offsets": vision.branch_offsets or {},
+                "detected_colors": vision.detected_colors or {},
+            },
+        }
+        try:
+            vision_status_path.parent.mkdir(parents=True, exist_ok=True)
+            vision_status_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            if vision.debug_frame is not None:
+                ok, encoded = cv2.imencode(".jpg", vision.debug_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 58])
+                if ok:
+                    vision_frame_path.write_bytes(encoded.tobytes())
+        except Exception:
+            pass
+
     def request_stop(_signum, _frame) -> None:
         nonlocal stopping
         stopping = True
@@ -109,6 +139,7 @@ def main() -> int:
                 ok, frame = cap.read()
                 if ok:
                     vision = tracker.process(frame)
+                    write_vision_status(vision)
                 else:
                     print("[warn] camera read failed; switching to control-only mode")
                     cap.release()

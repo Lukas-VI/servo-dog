@@ -6,6 +6,8 @@ serial_port: /dev/serial0
 serial_baud: 9600
 stand_height: 144
 runtime_status_path: /tmp/edog_runtime_status.json
+vision_status_path: /tmp/edog_vision_status.json
+vision_frame_path: /tmp/edog_vision_frame.jpg
 pid:
   kp_side: 0.12
   kd_side: 0.04
@@ -60,10 +62,11 @@ gamepad:
   mode_buttons:
     0: track
     2: stop
+    3: byroad_a
+    5: byroad_b
   action_buttons:
-    3: updais
-    5: lean_left
-    6: lean_right
+    6: lean_left
+    7: lean_right
 colors_hsv:
   blue:
     min: [95, 70, 40]
