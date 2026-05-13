@@ -1,0 +1,21 @@
+{
+  "source": "比赛调试说明文档.docx Action Designer 调脉宽示例截图，作为直立参考起点，不是当前机器狗实测标定。",
+  "unit": "microsecond_pwm",
+  "safe_expected_range": [900, 2100],
+  "joints": {
+    "left_front_upper": 1036,
+    "left_front_middle": 1398,
+    "left_front_lower": 1941,
+    "right_front_upper": 1924,
+    "right_front_middle": 1488,
+    "right_front_lower": 954,
+    "left_rear_upper": 1954,
+    "left_rear_middle": 1448,
+    "left_rear_lower": 1911,
+    "right_rear_upper": 1046,
+    "right_rear_middle": 1498,
+    "right_rear_lower": 1114,
+    "head": 1487,
+    "waist": 1540
+  }
+}
